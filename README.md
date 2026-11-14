@@ -75,15 +75,15 @@ Toàn bộ sản phẩm bàn giao được tổ chức khoa học theo đúng c�
 ## 2. Tóm tắt Kết quả Đo lường Thực nghiệm (Real Metrics Summary)
 
 ```text
-╔═════════╦════════════════════════════════════════╦══════════════════════════════════╦════════════╗
-║ Mã ASR  ║ Thuộc tính chất lượng kiểm chứng     ║ Kết quả đo lường thực tế         ║ Đánh giá   ║
-╠═════════╬════════════════════════════════════════╬══════════════════════════════════╬════════════╣
-║ ASR-01  ║ Chống Đặt trùng lịch (Concurrency 50) ║ 1 thành công, 49 rejected, p95: 388ms ║  [ PASSED ]  ║
-║ ASR-02  ║ Chịu lỗi & Cách ly Sự cố HIS Huế     ║ Đà Nẵng: OK, Quảng Nam: OK, Huế: OPEN ║  [ PASSED ]  ║
-║ ASR-03  ║ Bảo mật & Contextual ABAC            ║ Mã HTTP: 403, Audit Log Recorded: true ║  [ PASSED ]  ║
-║ ASR-05  ║ Toàn vẹn Nhật ký Kiểm toán HMAC       ║ Phát hiện gian lận: CÓ (Chính xác) ║  [ PASSED ]  ║
-║ ASR-04  ║ Khả năng Mở rộng Tích hợp HIS 4 (FHIR)║ Đồng bộ HIS 4: THÀNH CÔNG, FHIR: true ║  [ PASSED ]  ║
-╚═════════╩════════════════════════════════════════╩══════════════════════════════════╩════════════╝
+╔═════════╦════════════════════════════════════════╦═══════════════════════════════════════╦══════════════╗
+║ Mã ASR  ║ Thuộc tính chất lượng kiểm chứng       ║ Kết quả đo lường thực tế              ║ Đánh giá     ║
+╠═════════╬════════════════════════════════════════╬═══════════════════════════════════════╬══════════════╣
+║ ASR-01  ║ Chống Đặt trùng lịch (Concurrency 50)  ║ 1 thành công, 49 rejected, p95: 388ms ║  [ PASSED ]  ║
+║ ASR-02  ║ Chịu lỗi & Cách ly Sự cố HIS Huế       ║ Đà Nẵng: OK, Quảng Nam: OK, Huế: OPEN ║  [ PASSED ]  ║
+║ ASR-03  ║ Bảo mật & Contextual ABAC              ║ Mã HTTP: 403, Audit Log Recorded: true║  [ PASSED ]  ║
+║ ASR-05  ║ Toàn vẹn Nhật ký Kiểm toán HMAC        ║ Phát hiện gian lận: CÓ (Chính xác)    ║  [ PASSED ]  ║
+║ ASR-04  ║ Khả năng Mở rộng Tích hợp HIS 4 (FHIR) ║ Đồng bộ HIS 4: THÀNH CÔNG, FHIR: true ║  [ PASSED ]  ║
+╚═════════╩════════════════════════════════════════╩═══════════════════════════════════════╩══════════════╝
 ```
 
 ---

@@ -1,0 +1,34 @@
+@startuml C4_Context_MediLink
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+
+title System Context Diagram [C4 Level 1] - Nền tảng Y tế MediLink
+
+Person(patient, "Bệnh nhân (Patient)", "Người dùng ứng dụng tìm kiếm bác sĩ, đặt lịch khám, thanh toán cọc và tra cứu hồ sơ sức khỏe.")
+Person(doctor, "Bác sĩ (Doctor)", "Khám chữa bệnh, xem lịch làm việc cá nhân, tra cứu tiền sử bệnh án và kê đơn điện tử.")
+Person(receptionist, "Lễ tân / Thu ngân", "Tiếp đón bệnh nhân tại quầy, check-in theo cơ sở được phân quyền, in phiếu khám.")
+Person(director, "Ban Giám đốc chuỗi", "Theo dõi dashboard tổng quan về công suất phòng khám, doanh thu và vận hành 12 cơ sở.")
+
+System_Boundary(c1, "Ranh giới An toàn Nền tảng MediLink") {
+    System(medilink, "MediLink Platform", "Nền tảng tích hợp trung tâm quản lý đặt lịch khám, hồ sơ sức khỏe điện tử (EHR), bảo mật RBAC/ABAC và liên thông HIS.")
+}
+
+System_Ext(his_danang, "HIS Đà Nẵng", "Hệ thống quản lý phòng khám tại Đà Nẵng [REST / JSON API].")
+System_Ext(his_hue, "HIS Huế (Di sản)", "Hệ thống quản lý phòng khám cũ tại Huế [SOAP / XML Service].")
+System_Ext(his_quangnam, "HIS Quảng Nam", "Hệ thống quản lý phòng khám tại Quảng Nam [Custom Database / REST].")
+System_Ext(payment_gw, "Cổng Thanh toán Điện tử", "Xử lý giao dịch thanh toán đặt cọc trực tuyến (MoMo, VNPay, Ngân hàng).")
+System_Ext(notification_gw, "Cổng SMS / Zalo / Email", "Hệ thống gửi tin nhắn nhắc hẹn, mã QR check-in tự động cho bệnh nhân.")
+
+Rel(patient, medilink, "Tìm bác sĩ, đặt lịch hẹn, xem hồ sơ bệnh án", "HTTPS / JSON")
+Rel(doctor, medilink, "Xem lịch khám, cập nhật chẩn đoán, kê đơn", "HTTPS / JSON")
+Rel(receptionist, medilink, "Check-in bệnh nhân theo cơ sở (phân quyền nghiêm ngặt)", "HTTPS / JSON")
+Rel(director, medilink, "Tra cứu báo cáo thống kê, dashboard vận hành", "HTTPS / JSON")
+
+Rel(medilink, his_danang, "Đồng bộ lịch hẹn và trạng thái tiếp đón", "HTTP/REST JSON")
+Rel(medilink, his_hue, "Đồng bộ lịch hẹn qua Adapter chuyên biệt", "SOAP / XML")
+Rel(medilink, his_quangnam, "Đồng bộ lịch hẹn hai chiều", "HTTP/REST")
+Rel(medilink, payment_gw, "Khởi tạo và đối soát giao dịch đặt cọc", "HTTPS / API")
+Rel(medilink, notification_gw, "Phát lệnh gửi tin nhắn nhắc hẹn tự động", "HTTPS / API")
+
+@enduml

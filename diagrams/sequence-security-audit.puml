@@ -1,0 +1,46 @@
+@startuml Sequence_Security_Audit
+autonumber
+skinparam style strictuml
+skinparam sequenceMessageAlign center
+
+title Sequence Diagram: Phân quyền Contextual ABAC & Audit Log Bất biến (ASR-03 & ASR-05)
+
+actor "Lễ tân Đà Nẵng\n(Attacker / Misuser)" as Staff
+participant "API Gateway\n(TLS Termination)" as GW
+participant "Auth Middleware\n(Token Verifier)" as Auth
+participant "ABAC Policy Engine\n(Context Checker)" as ABAC
+participant "EHR Service\n(Medical Records)" as EHR
+participant "Audit Service\n(HMAC Chaining)" as Audit
+participant "Audit Store\n(Postgres Append-Only)" as AuditDB
+
+Staff -> GW: GET /api/ehr/records/REC-HUE-5544\n[Authorization: Bearer <JWT_Token_Staff_Danang>]
+
+GW -> Auth: Validate Token & Claims
+activate Auth
+Auth --> Auth: Trích xuất Payload:\n{sub: "staff_dn_01", role: "RECEPTIONIST", facility_id: "FAC_DANANG"}
+Auth -> EHR: Query Metadata for "REC-HUE-5544"
+deactivate Auth
+
+activate EHR
+EHR --> EHR: Truy xuất thuộc tính tài nguyên:\n{record_id: "REC-HUE-5544", facility_id: "FAC_HUE", is_sensitive: true}
+EHR -> ABAC: evaluatePolicy(subject, resource, action="READ")
+deactivate EHR
+
+activate ABAC
+Note over ABAC: Kiểm tra Quy tắc ABAC:\n1. role == "RECEPTIONIST"? -> TRUE\n2. subject.facility_id == resource.facility_id?\n"FAC_DANANG" == "FAC_HUE"? -> FALSE (XUNG ĐỘT CƠ SỞ)
+ABAC --> Auth: ACCESS_DENIED ("Truy cập trái tuyến ngoài phạm vi cơ sở phân công")
+deactivate ABAC
+
+group #MistyRose Bước 2: Ghi nhận Vi phạm An ninh vào Chuỗi Kiểm toán Bất biến
+    Auth -> Audit: logSecurityViolation({\n  actor: "staff_dn_01",\n  role: "RECEPTIONIST",\n  target: "REC-HUE-5544",\n  action: "UNAUTHORIZED_READ_ATTEMPT",\n  status: 403\n})
+    activate Audit
+    Note over Audit: Tính toán mã băm HMAC liên hoàn:\nprev_hash = SELECT current_hash FROM audit_logs ORDER BY id DESC LIMIT 1\nhash = HMAC_SHA256(SECRET_KEY, prev_hash + timestamp + actor + action + target)
+    Audit -> AuditDB: INSERT INTO audit_logs (prev_hash, current_hash, data) [APPEND-ONLY]
+    AuditDB --> Audit: Record Persisted (ID = 88219)
+    deactivate Audit
+end
+
+Auth --> GW: HTTP 403 Forbidden ("Truy cập bị từ chối: Hồ sơ thuộc quyền cơ sở khác")
+GW --> Staff: HTTP 403 Forbidden\n{error: "PERMISSION_DENIED", incident_id: "SEC-88219"}
+
+@enduml

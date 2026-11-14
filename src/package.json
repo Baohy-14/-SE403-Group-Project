@@ -1,0 +1,29 @@
+{
+  "name": "medilink-platform",
+  "version": "1.0.0",
+  "description": "MediLink - Centralized Healthcare Scheduling and Electronic Health Records Platform",
+  "main": "core/server.js",
+  "scripts": {
+    "start": "node core/server.js",
+    "mock-his": "node mock-his/mockServersManager.js",
+    "test:concurrency": "node tests/test_concurrency_double_booking.js",
+    "test:circuit-breaker": "node tests/test_circuit_breaker_fault_tolerance.js",
+    "test:security": "node tests/test_security_rbac_abac.js",
+    "test:audit": "node tests/test_audit_tamper_detection.js",
+    "test:extensibility": "node tests/test_extensibility_his4.js",
+    "test:all": "node tests/run_all_verification_tests.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "keywords": [
+    "healthcare",
+    "architecture",
+    "concurrency",
+    "circuit-breaker",
+    "hl7-fhir",
+    "audit-chain"
+  ],
+  "author": "Nguyen Duc Bao Hy, Le Viet Nghia, Tran Tien Danh, Nguyen Quang Truong",
+  "license": "MIT"
+}

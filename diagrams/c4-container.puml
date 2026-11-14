@@ -1,0 +1,58 @@
+@startuml C4_Container_MediLink
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Container Diagram [C4 Level 2] - Nền tảng Y tế MediLink
+
+Person(user, "Người dùng (User)", "Bệnh nhân, Bác sĩ, Lễ tân")
+
+Container(spa, "Web Single-Page App", "React, TypeScript, TailwindCSS", "Giao diện web phản hồi nhanh cho bệnh nhân, bác sĩ và nhân viên lễ tân quầy.")
+Container(mobile, "Mobile App", "Flutter / React Native", "Ứng dụng di động cho bệnh nhân đặt lịch hẹn và theo dõi hồ sơ y tế.")
+
+System_Boundary(medilink_core, "MediLink Core Platform (Docker Container Environment)") {
+    Container(api_gw, "API Gateway & Reverse Proxy", "Nginx / Express Gateway", "Đầu mối tiếp nhận, giải mã SSL TLS 1.3, Rate limiting Token Bucket, định tuyến URL.")
+    Container(auth_mod, "Security & Auth Module", "Node.js, JWT, ABAC Engine", "Xác thực danh tính, phân quyền RBAC kết hợp Contextual ABAC (facility_id).")
+    Container(booking_mod, "Booking & Scheduling Module", "Node.js, Express", "Điều phối đặt lịch, giữ chỗ, kiểm soát concurrency bằng Distributed Lock và Idempotency.")
+    Container(ehr_mod, "EHR & Health Records Module", "Node.js, Express", "Quản lý hồ sơ bệnh án, mã hóa dữ liệu nhạy cảm AES-256, kiểm soát quyền truy cập.")
+    Container(acl_mod, "Anti-Corruption Layer (ACL)", "Node.js, HL7 FHIR R4", "Chuyển đổi dữ liệu sang Canonical Model và điều phối các HIS Adapters.")
+    Container(audit_mod, "Tamper-Evident Audit Service", "Node.js, HMAC-SHA256", "Ghi nhật ký kiểm toán Append-Only với chuỗi băm mật mã liên hoàn.")
+    Container(notif_worker, "Notification Background Worker", "Node.js, BullMQ Process", "Xử lý quét lịch hẹn định kỳ và phát tán SMS/Zalo/Email từ hàng đợi.")
+}
+
+ContainerDb(redis_store, "In-Memory Cache & Lock Store", "Redis 7.x", "Quản lý Distributed Lock (Redlock), Idempotency Keys, Circuit Breaker State, Job Queues.")
+ContainerDb(main_db, "Primary Relational Database", "PostgreSQL / SQLite", "Lưu trữ Lịch khám, Thông tin Bệnh nhân, Bác sĩ, Đơn thuốc, Ràng buộc UNIQUE slot.")
+ContainerDb(audit_db, "Audit Log Store (Append-Only)", "PostgreSQL Encrypted Table", "Bảng nhật ký kiểm toán bất biến, bảo vệ bằng chuỗi băm HMAC liên hoàn.")
+
+System_Ext(his_danang, "HIS Đà Nẵng", "REST / JSON API")
+System_Ext(his_hue, "HIS Huế (Di sản)", "SOAP / XML Service")
+System_Ext(his_quangnam, "HIS Quảng Nam", "Custom REST API")
+
+Rel(user, spa, "Sử dụng trình duyệt", "HTTPS")
+Rel(user, mobile, "Sử dụng ứng dụng", "HTTPS")
+
+Rel(spa, api_gw, "Gọi API", "HTTPS / JSON")
+Rel(mobile, api_gw, "Gọi API", "HTTPS / JSON")
+
+Rel(api_gw, auth_mod, "Forward Request", "Internal HTTP / TCP")
+Rel(auth_mod, booking_mod, "Ủy quyền hợp lệ", "In-Process Call")
+Rel(auth_mod, ehr_mod, "Ủy quyền hợp lệ (ABAC check)", "In-Process Call")
+
+Rel(booking_mod, redis_store, "Acquire / Release Lock (TTL 3s)", "Redis TCP (Port 6379)")
+Rel(booking_mod, main_db, "Insert Booking (UNIQUE slot)", "SQL / TCP (Port 5432)")
+Rel(booking_mod, acl_mod, "Đồng bộ lịch hẹn", "In-Process Call")
+
+Rel(ehr_mod, main_db, "Đọc / Ghi bệnh án đã mã hóa", "SQL / TCP (Port 5432)")
+Rel_Back(audit_mod, auth_mod, "Log Security Event (Async)", "In-Process Queue")
+Rel_Back(audit_mod, ehr_mod, "Log EHR Access (Async)", "In-Process Queue")
+Rel(audit_mod, audit_db, "Append Audit Entry (HMAC Chain)", "SQL Append-Only")
+
+Rel(acl_mod, redis_store, "Đọc / Ghi trạng thái Circuit Breaker", "Redis TCP")
+Rel(acl_mod, his_danang, "Sync Appointment", "HTTP/REST")
+Rel(acl_mod, his_hue, "Sync Appointment via SOAP Envelope", "HTTP/SOAP XML")
+Rel(acl_mod, his_quangnam, "Sync Appointment", "HTTP/REST")
+
+Rel(booking_mod, redis_store, "Push Notification Job", "Redis BullMQ")
+Rel(redis_store, notif_worker, "Consume Job", "Redis BullMQ")
+
+@enduml

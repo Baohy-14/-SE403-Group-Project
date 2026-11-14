@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  medilink-core:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    container_name: medilink-core-app
+    ports:
+      - "3000:3000"
+      - "8001:8001"
+      - "8002:8002"
+      - "8003:8003"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - HIS_DANANG_URL=http://localhost:8001
+      - HIS_HUE_URL=http://localhost:8002
+      - HIS_QUANGNAM_URL=http://localhost:8003
+      - JWT_SECRET=medilink-production-jwt-token-key-2026
+      - HMAC_AUDIT_SECRET=medilink-audit-chain-tamper-proof-hmac-key-99
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

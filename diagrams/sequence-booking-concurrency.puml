@@ -1,0 +1,62 @@
+@startuml Sequence_Booking_Concurrency
+autonumber
+skinparam style strictuml
+skinparam sequenceMessageAlign center
+
+title Sequence Diagram: Luồng Đặt lịch Chống Double-Booking (ASR-01)
+
+actor "Bệnh nhân 1\n(Client A)" as P1
+actor "Bệnh nhân 2\n(Client B)" as P2
+participant "API Gateway\n(Rate Limit & Auth)" as GW
+participant "Booking Service\n(Domain Core)" as Core
+participant "Redis Store\n(Distributed Lock)" as Redis
+participant "Database\n(Unique Constraint)" as DB
+participant "Anti-Corruption\nLayer (ACL)" as ACL
+participant "Mock HIS\n(Phòng khám)" as HIS
+
+Note over P1, P2: 50 Bệnh nhân cùng chọn: Bác sĩ Nguyễn Văn A, Khung giờ 08:00 - 08:30
+
+P1 -> GW: POST /api/bookings {doctor_id: 101, slot: "08:00", idemp_key: "K-01"}
+P2 -> GW: POST /api/bookings {doctor_id: 101, slot: "08:00", idemp_key: "K-02"}
+
+GW -> Core: Forward Request 1
+GW -> Core: Forward Request 2
+
+group #LightCyan Bước 1: Tranh chấp Khóa Phân tán (Distributed Lock)
+    Core -> Redis: SET lock:slot:101:0800 "LOCKED" NX PX 3000 (Req 1)
+    activate Redis
+    Redis --> Core: OK (Acquired Lock thành công)
+    deactivate Redis
+
+    Core -> Redis: SET lock:slot:101:0800 "LOCKED" NX PX 3000 (Req 2)
+    activate Redis
+    Redis --> Core: NULL (Thất bại - Slot đang bị khóa)
+    deactivate Redis
+end
+
+group #MistyRose Bước 2: Từ chối tức thì Request 2 (Fast-Fail)
+    Core --> GW: 409 Conflict ("Khung giờ đang có người giữ hoặc đã hết chỗ")
+    GW --> P2: 409 Conflict (Gợi ý slot 08:30 hoặc 09:00)
+end
+
+group #Honeydew Bước 3: Hoàn tất Đặt lịch cho Request 1
+    Core -> DB: SELECT status FROM appointment_slots WHERE doctor_id=101 AND slot="08:00"
+    DB --> Core: Status = "AVAILABLE"
+
+    Core -> DB: INSERT INTO bookings (id, doctor_id, slot, status) VALUES (...)
+    note right of DB: Ràng buộc UNIQUE(doctor_id, slot) bảo vệ tầng DB
+    DB --> Core: Insert Confirmed (Booking ID = 9901)
+
+    Core -> ACL: dispatchSyncBooking(facility_id, bookingData)
+    activate ACL
+    ACL -> HIS: POST /api/appointments [REST/JSON hoặc SOAP/XML]
+    HIS --> ACL: 200 OK (Mã tiếp đón: "HIS-DN-8812")
+    ACL --> Core: Sync Success
+    deactivate ACL
+
+    Core -> Redis: DEL lock:slot:101:0800 (Giải phóng khóa)
+    Core --> GW: 201 Created {booking_id: 9901, status: "CONFIRMED"}
+    GW --> P1: 201 Created (Đặt lịch thành công, mã QR check-in)
+end
+
+@enduml

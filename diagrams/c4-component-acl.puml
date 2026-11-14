@@ -1,0 +1,41 @@
+@startuml C4_Component_ACL
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Component Diagram [C4 Level 3] - Lớp Tích hợp Anti-Corruption Layer (ACL)
+
+Container(booking_service, "Booking Core Service", "Domain Logic", "Điều phối đặt lịch hẹn, quản lý trạng thái slot khám.")
+
+Container_Boundary(acl_boundary, "Anti-Corruption Layer (HIS Integration Engine)") {
+    Component(dispatcher, "HisIntegrationDispatcher", "TypeScript / Node.js", "Tiếp nhận booking, kiểm tra circuit health và điều phối tới Adapter thích hợp.")
+    Component(cb_manager, "CircuitBreakerManager", "Resilience Pattern", "Quản lý trạng thái Closed/Open/Half-Open cho từng cơ sở, timeout budget.")
+    Component(mapper, "CanonicalModelMapper", "Data Transformer", "Chuyển đổi thực thể nội bộ <-> Chuẩn HL7 FHIR (Appointment, Patient, Encounter).")
+    Component(factory, "HisAdapterFactory", "Creational Pattern", "Khởi tạo và cung cấp Adapter phù hợp dựa trên facility_id.")
+
+    ComponentInterface(i_adapter, "IHisIntegrationAdapter", "TypeScript Interface", "Hợp đồng giao tiếp chung: syncAppointment(), cancelAppointment(), checkHealth().")
+
+    Component(danang_adapter, "DaNangHisJsonAdapter", "Adapter Implementation", "Chuyển đổi HL7 FHIR <-> REST JSON payload của HIS Đà Nẵng.")
+    Component(hue_adapter, "HueHisXmlAdapter", "Adapter Implementation", "Chuyển đổi HL7 FHIR <-> SOAP/XML envelope của HIS Huế.")
+    Component(quangnam_adapter, "QuangNamHisAdapter", "Adapter Implementation", "Chuyển đổi HL7 FHIR <-> REST payload của HIS Quảng Nam.")
+}
+
+System_Ext(mock_danang, "Mock HIS Đà Nẵng", "Cổng REST JSON Service")
+System_Ext(mock_hue, "Mock HIS Huế", "Cổng SOAP XML Service")
+System_Ext(mock_quangnam, "Mock HIS Quảng Nam", "Cổng Custom REST Service")
+
+Rel(booking_service, dispatcher, "dispatchSync(bookingData)", "Function Call")
+Rel(dispatcher, cb_manager, "isCircuitAvailable(facilityId)", "Function Call")
+Rel(dispatcher, mapper, "toFhirAppointment(bookingData)", "Function Call")
+Rel(dispatcher, factory, "getAdapter(facilityId)", "Function Call")
+Rel(factory, i_adapter, "Resolves", "Interface")
+
+i_adapter <|.. danang_adapter
+i_adapter <|.. hue_adapter
+i_adapter <|.. quangnam_adapter
+
+Rel(danang_adapter, mock_danang, "POST /api/appointments", "HTTP / JSON")
+Rel(hue_adapter, mock_hue, "POST /ws/appointmentService.asmx", "HTTP / SOAP XML")
+Rel(quangnam_adapter, mock_quangnam, "POST /his/v1/booking", "HTTP / JSON")
+
+@enduml

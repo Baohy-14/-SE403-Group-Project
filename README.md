@@ -9,9 +9,9 @@
 
 | STT | Họ và Tên | Vai trò chính | Trách nhiệm cốt lõi |
 |:---:|-----------|---------------|---------------------|
-| 1 | **Nguyễn Đức Bảo Hy** | Kiến trúc sư trưởng (*Lead Architect*) | Chủ trì phân tích ASR, lựa chọn Tactics, thiết kế C4 Views, chủ trì đánh giá ATAM và phê duyệt ADR. |
+| 1 | **Trần Tiến Danh** | Kiến trúc sư trưởng (*Lead Architect*) | Chủ trì phân tích ASR, lựa chọn Tactics, thiết kế C4 Views, chủ trì đánh giá ATAM và phê duyệt ADR. |
 | 2 | **Lê Viết Nghĩa** | Phụ trách Yêu cầu & Tài liệu (*Requirements & Documentation Owner*) | Phân tích bài toán chuỗi 12 phòng khám, ràng buộc Nghị định 13/2023/NĐ-CP, quản lý SAD và AI Log. |
-| 3 | **Trần Tiến Danh** | Phụ trách Prototype (*Prototype Lead*) | Xây dựng mã nguồn khung (Skeleton), Anti-Corruption Layer, Adapters cho 3 HIS, Distributed Lock và Docker hóa. |
+| 3 | **Nguyễn Đức Bảo Hy** | Phụ trách Prototype (*Prototype Lead*) | Xây dựng mã nguồn khung (Skeleton), Anti-Corruption Layer, Adapters cho 3 HIS, Distributed Lock và Docker hóa. |
 | 4 | **Nguyễn Quang Trường** | Phụ trách QA/Test (*QA/Test Lead*) | Xây dựng kịch bản kiểm thử Quality Attributes, viết test scripts giả lập tải 50 requests, fault injection, security ABAC test. |
 
 ---
@@ -69,38 +69,10 @@ Toàn bộ sản phẩm bàn giao được tổ chức khoa học theo đúng c�
         └── run_all_verification_tests.js            # Runner chính thực thi toàn bộ kiểm chứng & xuất báo cáo
 ```
 
----
 
-## 3. Hướng dẫn Chạy Thử nghiệm Prototype (Quick Start)
 
-### Yêu cầu tiên quyết:
-- Đã cài đặt **Node.js** (khuyến nghị phiên bản 20 LTS hoặc 24) hoặc **Docker**.
 
-### Cách 1: Chạy trực tiếp qua Node.js (Nhanh nhất)
-```bash
-# 1. Di chuyển vào thư mục src
-cd src
-
-# 2. Cài đặt các gói phụ thuộc (chỉ mất ~5 giây)
-npm install
-
-# 3. Chạy toàn bộ bộ kiểm chứng Quality Attributes tự động (Master Verification Suite)
-node tests/run_all_verification_tests.js
-```
-
-### Cách 2: Chạy qua Docker Compose (Môi trường chuẩn hóa)
-```bash
-docker compose up --build
-```
-Hệ thống sẽ khởi chạy toàn bộ MediLink Core và 3 Mock HIS độc lập trên các cổng:
-- **MediLink Core:** `http://localhost:3000` (Health: `http://localhost:3000/health`)
-- **Mock HIS Đà Nẵng (REST/JSON):** `http://localhost:8001`
-- **Mock HIS Huế (SOAP/XML):** `http://localhost:8002`
-- **Mock HIS Quảng Nam (Custom REST):** `http://localhost:8003`
-
----
-
-## 4. Tóm tắt Kết quả Đo lường Thực nghiệm (Real Metrics Summary)
+## 2. Tóm tắt Kết quả Đo lường Thực nghiệm (Real Metrics Summary)
 
 ```text
 ╔═════════╦════════════════════════════════════════╦══════════════════════════════════╦════════════╗
@@ -116,6 +88,6 @@ Hệ thống sẽ khởi chạy toàn bộ MediLink Core và 3 Mock HIS độc l
 
 ---
 
-## 5. Giấy phép & Tuyên bố Bản quyền
+## 3. Giấy phép & Tuyên bố Bản quyền
 
 Đồ án được thực hiện nghiêm túc bởi Nhóm sinh viên CMUSE 403, tuân thủ đúng Quy chế học vụ và Đạo đức học thuật. Mọi công cụ AI được sử dụng đều có nhật ký giải trình đầy đủ tại `ai-log.md`.

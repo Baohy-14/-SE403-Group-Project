@@ -1,40 +1,31 @@
 /**
- * Base Abstract HIS Integration Adapter
- * Defines the contract that every HIS adapter must adhere to
+ * Port Interface: IHisIntegrationAdapter (Hexagonal / Ports-and-Adapters Pattern)
+ * Every legacy or modern HIS Adapter MUST implement this contract.
  */
 
 class BaseHisAdapter {
-  constructor(facilityId, hisName) {
-    if (this.constructor === BaseHisAdapter) {
-      throw new Error("Cannot instantiate abstract class BaseHisAdapter");
+  constructor(facilityId, baseUrl) {
+    if (new.target === BaseHisAdapter) {
+      throw new Error('BaseHisAdapter is an abstract Port interface and cannot be instantiated directly.');
     }
     this.facilityId = facilityId;
-    this.hisName = hisName;
+    this.baseUrl = baseUrl;
   }
 
   /**
-   * Synchronize appointment to HIS
-   * @param {Object} fhirAppointment - Standard HL7 FHIR Appointment Resource
-   * @returns {Promise<{ success: boolean, hisReferenceCode: string, details: any }>}
+   * @param {{ patient: object, appointment: object }} canonicalBundle - HL7 FHIR R4 resources
+   * @param {number} timeoutMs - Strict timeout budget enforced by ACL
+   * @returns {Promise<{ success: boolean, hisReferenceCode: string, protocol: string }>}
    */
-  async syncAppointment(fhirAppointment) {
-    throw new Error("Method syncAppointment() must be implemented by subclass");
+  async syncAppointment(canonicalBundle, timeoutMs = 1500) {
+    throw new Error('Method syncAppointment(canonicalBundle, timeoutMs) must be implemented by concrete adapter.');
   }
 
-  /**
-   * Cancel appointment in HIS
-   * @param {string} appointmentId
-   * @returns {Promise<{ success: boolean }>}
-   */
-  async cancelAppointment(appointmentId) {
-    throw new Error("Method cancelAppointment() must be implemented by subclass");
-  }
-
-  /**
-   * Check connection health
-   */
-  async checkHealth() {
-    throw new Error("Method checkHealth() must be implemented by subclass");
+  async checkHealth(timeoutMs = 1000) {
+    const res = await fetch(`${this.baseUrl}/health`, {
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    return res.ok;
   }
 }
 

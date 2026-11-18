@@ -1,88 +1,126 @@
 /**
- * Distributed Lock Manager (In-Memory Redis Redlock Pattern)
- * Provides atomic lock acquisition with TTL auto-expiration
- * Guarantees zero double-booking during high concurrency
+ * Distributed Lock Manager with Monotonic Fencing Token (Implements ADR-003)
+ * - Primary Mode (Docker Compose): Executes real Redis `SET key value NX PX ttl`
+ *   and atomic Lua script `EVAL` check-owner-and-delete against `redis:7-alpine`.
+ * - Fallback / Standalone Mode: Atomic Embedded In-Memory Redis-compatible Engine
+ *   so tests also run deterministically on any machine without Docker daemon running,
+ *   and gracefully degrades if Redis experiences transient outage (Risk R-01/R-02).
  */
 
+const config = require('../config');
+const RedisRespClient = require('./redisRespClient');
+
+const LUA_ATOMIC_RELEASE =
+  "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+
 class LockManager {
-  constructor(defaultTtlMs = 3000) {
+  constructor(defaultTtlMs = config.LOCK_TTL_MS) {
     this.defaultTtlMs = defaultTtlMs;
-    // Map of lockKey -> { owner, expireAt, timer }
     this.locks = new Map();
+    this.fencingCounter = 0;
+    this.redisClient = config.REDIS_HOST
+      ? new RedisRespClient(config.REDIS_HOST, config.REDIS_PORT, 400)
+      : null;
+    this.backendMode = config.REDIS_HOST ? 'REDIS_TCP' : 'EMBEDDED_MEMORY';
   }
 
   /**
-   * Acquire lock atomically (equivalent to Redis SET lockKey owner NX PX ttl)
-   * @param {string} lockKey - e.g. "lock:slot:DOC_101:2026-11-20 08:00"
-   * @param {string} ownerId - Unique request/client ID
-   * @param {number} ttlMs - Time-to-live in milliseconds
-   * @returns {boolean} true if acquired, false if already locked
+   * Acquire distributed lock atomically: SET lockKey ownerValue NX PX ttlMs
+   * Returns { acquired: boolean, fencingToken: number, lockValue: string, mode: string }
    */
-  acquireLock(lockKey, ownerId, ttlMs = this.defaultTtlMs) {
-    const now = Date.now();
-    const existing = this.locks.get(lockKey);
+  async acquireLock(lockKey, ownerId, ttlMs = this.defaultTtlMs) {
+    this.fencingCounter += 1;
+    const fencingToken = this.fencingCounter;
+    const lockValue = `${ownerId}:${fencingToken}`;
 
-    // If existing and not expired, lock acquisition fails
-    if (existing && existing.expireAt > now) {
-      return false;
+    if (this.redisClient) {
+      try {
+        const tokenSeq = await this.redisClient.sendCommand(['INCR', 'medilink:fencing_seq']);
+        const actualFencing = typeof tokenSeq === 'number' ? tokenSeq : fencingToken;
+        const redisVal = `${ownerId}:${actualFencing}`;
+        const reply = await this.redisClient.sendCommand([
+          'SET',
+          lockKey,
+          redisVal,
+          'NX',
+          'PX',
+          String(ttlMs)
+        ]);
+        return {
+          acquired: reply === 'OK',
+          fencingToken: actualFencing,
+          lockValue: redisVal,
+          mode: 'REDIS_TCP'
+        };
+      } catch {
+        // Fallback to local lock + RDBMS UNIQUE constraint when Redis is unreachable
+        this.backendMode = 'EMBEDDED_FALLBACK';
+      }
     }
 
-    // Clear existing timer if any
+    const now = Date.now();
+    const existing = this.locks.get(lockKey);
+    if (existing && existing.expireAt > now) {
+      return { acquired: false, fencingToken: 0, lockValue: null, mode: this.backendMode };
+    }
+
     if (existing && existing.timer) {
       clearTimeout(existing.timer);
     }
 
-    // Set auto-expiration timer
-    const expireAt = now + ttlMs;
     const timer = setTimeout(() => {
-      this.releaseLock(lockKey, ownerId);
+      const cur = this.locks.get(lockKey);
+      if (cur && cur.lockValue === lockValue) {
+        this.locks.delete(lockKey);
+      }
     }, ttlMs);
+    if (typeof timer.unref === 'function') timer.unref();
 
     this.locks.set(lockKey, {
-      owner: ownerId,
-      expireAt,
+      lockValue,
+      fencingToken,
+      expireAt: now + ttlMs,
       timer
     });
 
-    return true;
+    return {
+      acquired: true,
+      fencingToken,
+      lockValue,
+      mode: this.backendMode
+    };
   }
 
   /**
-   * Release lock atomically (checks owner before releasing)
-   * @param {string} lockKey
-   * @param {string} ownerId
-   * @returns {boolean} true if released, false if not owned or not locked
+   * Release lock ONLY if lockValue matches (prevents releasing another process's lock!)
    */
-  releaseLock(lockKey, ownerId) {
-    const existing = this.locks.get(lockKey);
-    if (!existing) {
-      return false;
+  async releaseLock(lockKey, lockValue) {
+    if (!lockValue) return false;
+
+    if (this.redisClient && this.backendMode === 'REDIS_TCP') {
+      try {
+        const deleted = await this.redisClient.sendCommand([
+          'EVAL',
+          LUA_ATOMIC_RELEASE,
+          '1',
+          lockKey,
+          lockValue
+        ]);
+        return deleted === 1;
+      } catch {
+        // Fall through to local cleanup
+      }
     }
 
-    // Check ownership
-    if (existing.owner === ownerId) {
-      if (existing.timer) {
-        clearTimeout(existing.timer);
-      }
+    const existing = this.locks.get(lockKey);
+    if (existing && existing.lockValue === lockValue) {
+      if (existing.timer) clearTimeout(existing.timer);
       this.locks.delete(lockKey);
       return true;
     }
-
     return false;
   }
 
-  /**
-   * Check if lock is active
-   */
-  isLocked(lockKey) {
-    const existing = this.locks.get(lockKey);
-    if (!existing) return false;
-    return existing.expireAt > Date.now();
-  }
-
-  /**
-   * Clear all locks (for testing)
-   */
   clear() {
     for (const [, lock] of this.locks) {
       if (lock.timer) clearTimeout(lock.timer);

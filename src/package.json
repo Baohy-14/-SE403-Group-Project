@@ -1,29 +1,39 @@
 {
   "name": "medilink-platform",
-  "version": "1.0.0",
-  "description": "MediLink - Centralized Healthcare Scheduling and Electronic Health Records Platform",
+  "version": "2.0.0",
+  "description": "MediLink Architecture v2 Prototype - SE 403 Group Project (Topic 1)",
   "main": "core/server.js",
-  "scripts": {
-    "start": "node core/server.js",
-    "mock-his": "node mock-his/mockServersManager.js",
-    "test:concurrency": "node tests/test_concurrency_double_booking.js",
-    "test:circuit-breaker": "node tests/test_circuit_breaker_fault_tolerance.js",
-    "test:security": "node tests/test_security_rbac_abac.js",
-    "test:audit": "node tests/test_audit_tamper_detection.js",
-    "test:extensibility": "node tests/test_extensibility_his4.js",
-    "test:all": "node tests/run_all_verification_tests.js"
+  "engines": {
+    "node": ">=22.5.0"
   },
-  "dependencies": {
-    "express": "^4.19.2"
+  "scripts": {
+    "start": "node --no-warnings core/server.js",
+    "worker": "node --no-warnings worker/backgroundWorker.js",
+    "mock-his": "node --no-warnings mock-his/mockServersManager.js",
+    "mock-his:danang": "node --no-warnings mock-his/hisDaNangServer.js",
+    "mock-his:hue": "node --no-warnings mock-his/hisHueServer.js",
+    "mock-his:quangnam": "node --no-warnings mock-his/hisQuangNamServer.js",
+    "test": "node --no-warnings tests/run_all_verification_tests.js",
+    "test:all": "node --no-warnings tests/run_all_verification_tests.js",
+    "test:concurrency": "node --no-warnings tests/test_concurrency_double_booking.js",
+    "test:circuit-breaker": "node --no-warnings tests/test_circuit_breaker_fault_tolerance.js",
+    "test:security": "node --no-warnings tests/test_security_rbac_abac.js",
+    "test:audit": "node --no-warnings tests/test_audit_tamper_detection.js",
+    "test:extensibility": "node --no-warnings tests/test_extensibility_his4.js",
+    "test:performance": "node --no-warnings tests/test_performance_and_async_worker.js"
   },
   "keywords": [
-    "healthcare",
-    "architecture",
-    "concurrency",
-    "circuit-breaker",
+    "se403",
+    "software-architecture",
+    "medilink",
+    "modular-monolith",
+    "anti-corruption-layer",
     "hl7-fhir",
-    "audit-chain"
+    "distributed-lock",
+    "circuit-breaker",
+    "abac",
+    "hmac-audit-chain"
   ],
-  "author": "Nguyen Duc Bao Hy, Le Viet Nghia, Tran Tien Danh, Nguyen Quang Truong",
+  "author": "Tran Tien Danh, Le Viet Nghia, Nguyen Duc Bao Hy, Nguyen Quang Truong",
   "license": "MIT"
 }

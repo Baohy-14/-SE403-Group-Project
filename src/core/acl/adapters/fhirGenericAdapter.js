@@ -1,48 +1,37 @@
 /**
- * Generic HL7 FHIR Integration Adapter (HIS #4 - Hoi An Clinic)
- * Proves ASR-04: Integrating a 4th HIS without modifying any Core Domain code
+ * Concrete Adapter 4: Generic HL7 FHIR R4 Adapter (Implements ASR-04 Extensibility)
+ * Allows onboarding a 4th Clinic HIS (e.g., Phòng khám Quốc tế Hội An) speaking native
+ * HL7 FHIR R4 `Appointment` & `Patient` with ZERO lines changed in Core Domain!
  */
 
 const BaseHisAdapter = require('./baseAdapter');
-const config = require('../../config');
 
-class GenericFhirHisAdapter extends BaseHisAdapter {
-  constructor(facilityId = 'FAC_HOIAN', endpoint = config.HIS_GENERIC4_URL) {
-    super(facilityId, 'Generic_HL7_FHIR_R4_HIS');
-    this.endpoint = endpoint;
-  }
+class FhirGenericAdapter extends BaseHisAdapter {
+  async syncAppointment(canonicalBundle, timeoutMs = 1500) {
+    const { appointment } = canonicalBundle;
+    const idemKey = appointment.identifier?.[0]?.value || appointment.id;
 
-  async syncAppointment(fhirAppointment) {
-    // Directly send HL7 FHIR Appointment JSON payload
-    const response = await fetch(`${this.endpoint}/fhir/Appointment`, {
+    const res = await fetch(`${this.baseUrl}/fhir/r4/Appointment`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/fhir+json',
-        'Accept': 'application/fhir+json'
+        'X-Idempotency-Key': idemKey
       },
-      body: JSON.stringify(fhirAppointment)
+      body: JSON.stringify(appointment),
+      signal: AbortSignal.timeout(timeoutMs)
     });
 
-    if (!response.ok) {
-      throw new Error(`HL7 FHIR HIS HTTP Error: ${response.status} ${response.statusText}`);
+    if (!res.ok) {
+      throw new Error(`HIS_FHIR_R4_HTTP_${res.status}`);
     }
 
-    const fhirResponse = await response.json();
+    const fhirCreated = await res.json();
     return {
       success: true,
-      hisReferenceCode: fhirResponse.id || `FHIR-HOIAN-${Date.now()}`,
-      details: fhirResponse
+      hisReferenceCode: fhirCreated.id || `FHIR-${Date.now()}`,
+      protocol: 'HL7_FHIR_R4'
     };
-  }
-
-  async checkHealth() {
-    try {
-      const res = await fetch(`${this.endpoint}/fhir/metadata`);
-      return res.ok;
-    } catch {
-      return false;
-    }
   }
 }
 
-module.exports = GenericFhirHisAdapter;
+module.exports = FhirGenericAdapter;

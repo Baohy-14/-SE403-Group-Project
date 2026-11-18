@@ -1,95 +1,72 @@
 /**
- * HIS Integration Dispatcher (Anti-Corruption Layer Engine)
- * Manages Circuit Breakers, Translates to Canonical HL7 FHIR, and Routes to Adapters
+ * Anti-Corruption Layer (ACL) Central Dispatcher
+ * Coordinates:
+ *  1. Canonical HL7 FHIR R4 Mapping (`Patient` + `Appointment`)
+ *  2. Per-Facility Circuit Breaker Fault Isolation (Bulkhead per facility)
+ *  3. Pluggable Adapter Registry (Open-Closed Principle for ASR-04)
  */
 
+const config = require('../config');
 const CanonicalModelMapper = require('./canonicalModel');
 const CircuitBreaker = require('./circuitBreaker');
-const DaNangHisJsonAdapter = require('./adapters/daNangJsonAdapter');
-const HueHisXmlAdapter = require('./adapters/hueXmlAdapter');
-const QuangNamHisAdapter = require('./adapters/quangNamCustomAdapter');
-const GenericFhirHisAdapter = require('./adapters/fhirGenericAdapter');
+const DaNangJsonAdapter = require('./adapters/daNangJsonAdapter');
+const HueXmlAdapter = require('./adapters/hueXmlAdapter');
+const QuangNamCustomAdapter = require('./adapters/quangNamCustomAdapter');
 
-class HisDispatcher {
+class HisIntegrationDispatcher {
   constructor() {
-    // Registry of adapters: facilityId -> adapter instance
     this.adapters = new Map();
     this.circuitBreakers = new Map();
 
-    // Register built-in adapters
-    this.registerAdapter('FAC_DANANG', new DaNangHisJsonAdapter());
-    this.registerAdapter('FAC_HUE', new HueHisXmlAdapter());
-    this.registerAdapter('FAC_QUANGNAM', new QuangNamHisAdapter());
-    this.registerAdapter('FAC_HOIAN', new GenericFhirHisAdapter());
+    // Register initial 3 heterogeneous HIS adapters for the 12 clinics
+    this.registerAdapter('FAC_DANANG', new DaNangJsonAdapter('FAC_DANANG', config.HIS_DANANG_URL));
+    this.registerAdapter('FAC_HUE', new HueXmlAdapter('FAC_HUE', config.HIS_HUE_URL));
+    this.registerAdapter('FAC_QUANGNAM', new QuangNamCustomAdapter('FAC_QUANGNAM', config.HIS_QUANGNAM_URL));
   }
 
   /**
-   * Register or replace an adapter dynamically (Open-Closed Principle)
+   * Dynamically register a new HIS Adapter without touching Core Booking logic (ASR-04)
    */
-  registerAdapter(facilityId, adapter) {
-    this.adapters.set(facilityId, adapter);
-    if (!this.circuitBreakers.has(facilityId)) {
-      this.circuitBreakers.set(
-        facilityId,
-        new CircuitBreaker(`CB_${facilityId}`, {
-          failureThreshold: 3,
-          resetTimeoutMs: 5000,
-          timeoutMs: 2000
-        })
-      );
-    }
+  registerAdapter(facilityId, adapterInstance, cbOptions = {}) {
+    this.adapters.set(facilityId, adapterInstance);
+    this.circuitBreakers.set(facilityId, new CircuitBreaker(facilityId, cbOptions));
   }
 
-  getAdapter(facilityId) {
-    return this.adapters.get(facilityId);
-  }
-
-  getCircuitBreaker(facilityId) {
-    return this.circuitBreakers.get(facilityId);
-  }
-
-  /**
-   * Dispatch appointment sync to external HIS
-   */
-  async syncAppointment(facilityId, bookingData) {
+  async syncAppointment(facilityId, bookingPayload) {
     const adapter = this.adapters.get(facilityId);
-    if (!adapter) {
-      throw new Error(`No HIS Adapter registered for facility [${facilityId}]`);
+    const circuitBreaker = this.circuitBreakers.get(facilityId);
+
+    if (!adapter || !circuitBreaker) {
+      throw new Error(`NO_HIS_ADAPTER_REGISTERED_FOR_${facilityId}`);
     }
 
-    const cb = this.circuitBreakers.get(facilityId);
+    // Translate internal domain payload -> Canonical HL7 FHIR R4 Bundle { Patient, Appointment }
+    const canonicalBundle = CanonicalModelMapper.toCanonicalBundle(bookingPayload);
 
-    // 1. Map to Canonical HL7 FHIR Model
-    const fhirAppointment = CanonicalModelMapper.toFhirAppointment(bookingData);
-
-    // 2. Execute via Circuit Breaker with Fallback
-    return await cb.execute(
-      async () => {
-        return await adapter.syncAppointment(fhirAppointment);
-      },
-      async (error) => {
-        // Fallback action: Graceful degradation
-        return {
-          success: false,
-          isDegraded: true,
-          circuitBreakerState: cb.state,
-          hisReferenceCode: `FALLBACK-OUTBOX-${Date.now()}`,
-          message: `HIS cơ sở [${facilityId}] tạm thời không phản hồi (${error.message}). Lịch hẹn đã được đưa vào Outbox Queue để đồng bộ tự động khi kết nối phục hồi.`
-        };
-      }
+    // Execute outbound HIS call inside isolated per-facility Circuit Breaker
+    return circuitBreaker.execute((timeoutBudgetMs) =>
+      adapter.syncAppointment(canonicalBundle, timeoutBudgetMs)
     );
   }
 
-  /**
-   * Get all circuit breaker statuses
-   */
+  getCircuitStatus(facilityId) {
+    const cb = this.circuitBreakers.get(facilityId);
+    return cb ? cb.getStatus() : null;
+  }
+
   getAllCircuitStatuses() {
     const statuses = {};
-    for (const [facilityId, cb] of this.circuitBreakers) {
-      statuses[facilityId] = cb.getState();
+    for (const [facId, cb] of this.circuitBreakers.entries()) {
+      statuses[facId] = cb.getStatus();
     }
     return statuses;
   }
+
+  resetAllCircuits() {
+    for (const [, cb] of this.circuitBreakers.entries()) {
+      cb.reset();
+    }
+  }
 }
 
-module.exports = new HisDispatcher();
+module.exports = new HisIntegrationDispatcher();

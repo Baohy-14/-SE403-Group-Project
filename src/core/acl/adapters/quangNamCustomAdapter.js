@@ -1,58 +1,53 @@
 /**
- * Quang Nam HIS Integration Adapter
- * Protocol: Custom REST RPC
+ * Concrete Adapter 3: HIS Quảng Nam (Legacy Custom RPC / Numeric Patient Key)
+ * Translates HL7 FHIR R4 { Patient, Appointment } -> Custom RPC format using integer `ma_bn_noi_bo`.
  */
 
 const BaseHisAdapter = require('./baseAdapter');
-const config = require('../../config');
 
-class QuangNamHisAdapter extends BaseHisAdapter {
-  constructor() {
-    super('FAC_QUANGNAM', 'QuangNam_Custom_HIS');
-    this.endpoint = config.HIS_QUANGNAM_URL;
-  }
+class QuangNamCustomAdapter extends BaseHisAdapter {
+  async syncAppointment(canonicalBundle, timeoutMs = 1500) {
+    const { patient, appointment } = canonicalBundle;
+    const localNumericId =
+      patient.identifier.find((i) => i.system.includes(this.facilityId))?.value || '99000';
+    const doctorCode =
+      appointment.participant
+        .find((p) => p.actor.reference.startsWith('Practitioner/'))
+        ?.actor.reference.replace('Practitioner/', '') || 'DOC';
+    const idemKey = appointment.identifier?.[0]?.value || appointment.id;
 
-  async syncAppointment(fhirAppointment) {
-    const customPayload = {
-      action: 'BOOK_APPOINTMENT',
-      version: '2.1',
+    const rpcPayload = {
+      rpc_method: 'sp_ghi_nhan_lich_hen_online',
       params: {
-        ext_id: fhirAppointment.id,
-        bs_id: fhirAppointment.participant[1]?.actor?.reference.replace('Practitioner/', ''),
-        bn_ten: fhirAppointment.participant[0]?.actor?.display,
-        gio_kham: fhirAppointment.start
+        ma_giao_dich_ngoai: idemKey,
+        ma_bn_noi_bo: parseInt(localNumericId, 10) || 99000,
+        ten_bn: patient.name?.[0]?.text || 'Benh nhan',
+        ma_bac_si: doctorCode,
+        khung_gio_iso: appointment.start
       }
     };
 
-    const response = await fetch(`${this.endpoint}/his/v1/booking`, {
+    const res = await fetch(`${this.baseUrl}/his-rpc/v1/execute`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Token QN-SECRET-55'
+        'X-Idempotency-Key': idemKey
       },
-      body: JSON.stringify(customPayload)
+      body: JSON.stringify(rpcPayload),
+      signal: AbortSignal.timeout(timeoutMs)
     });
 
-    if (!response.ok) {
-      throw new Error(`QuangNam HIS Error: ${response.status} ${response.statusText}`);
+    if (!res.ok) {
+      throw new Error(`HIS_QUANGNAM_RPC_HTTP_${res.status}`);
     }
 
-    const data = await response.json();
+    const data = await res.json();
     return {
       success: true,
-      hisReferenceCode: data.ticket_no || `QN-${Date.now()}`,
-      details: data
+      hisReferenceCode: data.so_phieu_kham || `QN-${Date.now()}`,
+      protocol: 'CUSTOM_RPC_JSON'
     };
-  }
-
-  async checkHealth() {
-    try {
-      const res = await fetch(`${this.endpoint}/health`);
-      return res.ok;
-    } catch {
-      return false;
-    }
   }
 }
 
-module.exports = QuangNamHisAdapter;
+module.exports = QuangNamCustomAdapter;

@@ -1,73 +1,73 @@
 /**
- * Hue Legacy HIS Integration Adapter
- * Protocol: SOAP / XML Service
+ * Concrete Adapter 2: HIS Huế (Legacy Client-Server SOAP 1.1 / XML Envelope)
+ * Translates HL7 FHIR R4 { Patient, Appointment } <-> Legacy Vietnamese XML tags:
+ * `<MaBenhNhanYTe>HUE-BN-...</MaBenhNhanYTe>`, `<MaBacSi>`, `<GioKham>`.
  */
 
 const BaseHisAdapter = require('./baseAdapter');
-const config = require('../../config');
 
-class HueHisXmlAdapter extends BaseHisAdapter {
-  constructor() {
-    super('FAC_HUE', 'Hue_Legacy_SOAP_HIS');
-    this.endpoint = config.HIS_HUE_URL;
-  }
+function escapeXml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
-  async syncAppointment(fhirAppointment) {
-    // 1. Transform FHIR to SOAP / XML Envelope
-    const doctorCode = fhirAppointment.participant[1]?.actor?.reference.replace('Practitioner/', '');
-    const patientName = fhirAppointment.participant[0]?.actor?.display || 'Bệnh nhân';
+class HueXmlAdapter extends BaseHisAdapter {
+  async syncAppointment(canonicalBundle, timeoutMs = 1500) {
+    const { patient, appointment } = canonicalBundle;
+    const localHuePatientCode =
+      patient.identifier.find((i) => i.system.includes(this.facilityId))?.value || `HUE-BN-${patient.id}`;
+    const doctorCode =
+      appointment.participant
+        .find((p) => p.actor.reference.startsWith('Practitioner/'))
+        ?.actor.reference.replace('Practitioner/', '') || 'UNKNOWN';
+    const idemKey = appointment.identifier?.[0]?.value || appointment.id;
 
-    const soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:his="http://huehospital.vn/his/ws">
+    // Build SOAP 1.1 XML Envelope expected by Legacy Hue Clinic HIS
+    const soapXmlEnvelope = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:hue="http://his.hueclinic.vn/ws/2018">
   <soap:Header>
-    <his:AuthToken>HUE-SOAP-CREDENTIALS-2026</his:AuthToken>
+    <hue:IdempotencyToken>${escapeXml(idemKey)}</hue:IdempotencyToken>
   </soap:Header>
   <soap:Body>
-    <his:RegisterAppointmentRequest>
-      <his:ExternalBookingId>${fhirAppointment.id}</his:ExternalBookingId>
-      <his:DoctorId>${doctorCode}</his:DoctorId>
-      <his:PatientFullName>${patientName}</his:PatientFullName>
-      <his:ScheduledDateTime>${fhirAppointment.start}</his:ScheduledDateTime>
-      <his:ClinicDepartment>NoiKhoa</his:ClinicDepartment>
-    </his:RegisterAppointmentRequest>
+    <hue:DangKyLichKhamRequest>
+      <hue:MaThamChieuMediLink>${escapeXml(appointment.id)}</hue:MaThamChieuMediLink>
+      <hue:MaBenhNhanYTe>${escapeXml(localHuePatientCode)}</hue:MaBenhNhanYTe>
+      <hue:HoTenBenhNhan>${escapeXml(patient.name?.[0]?.text)}</hue:HoTenBenhNhan>
+      <hue:MaBacSi>${escapeXml(doctorCode)}</hue:MaBacSi>
+      <hue:ThoiGianBatDau>${escapeXml(appointment.start)}</hue:ThoiGianBatDau>
+    </hue:DangKyLichKhamRequest>
   </soap:Body>
 </soap:Envelope>`;
 
-    // 2. HTTP POST with text/xml Content-Type
-    const response = await fetch(`${this.endpoint}/ws/appointmentService.asmx`, {
+    const res = await fetch(`${this.baseUrl}/ws/AppointmentService.asmx`, {
       method: 'POST',
       headers: {
         'Content-Type': 'text/xml; charset=utf-8',
-        'SOAPAction': 'http://huehospital.vn/his/ws/RegisterAppointment'
+        SOAPAction: '"http://his.hueclinic.vn/ws/2018/DangKyLichKham"'
       },
-      body: soapEnvelope
+      body: soapXmlEnvelope,
+      signal: AbortSignal.timeout(timeoutMs)
     });
 
-    if (!response.ok) {
-      throw new Error(`Hue HIS SOAP Error: ${response.status} ${response.statusText}`);
+    if (!res.ok) {
+      throw new Error(`HIS_HUE_SOAP_FAULT_HTTP_${res.status}`);
     }
 
-    const xmlResponse = await response.text();
-
-    // Simple regex parser for SOAP response
-    const match = xmlResponse.match(/<his:HisReceptionTicketNumber>(.*?)<\/his:HisReceptionTicketNumber>/);
-    const receptionCode = match ? match[1] : `HUE-SOAP-${Date.now()}`;
+    const xmlResponse = await res.text();
+    const match = xmlResponse.match(/<MaTiepDonHue>([^<]+)<\/MaTiepDonHue>/);
+    if (!match) {
+      throw new Error('HIS_HUE_INVALID_SOAP_XML_RESPONSE');
+    }
 
     return {
       success: true,
-      hisReferenceCode: receptionCode,
-      details: { rawXmlLength: xmlResponse.length }
+      hisReferenceCode: match[1],
+      protocol: 'SOAP_XML'
     };
-  }
-
-  async checkHealth() {
-    try {
-      const res = await fetch(`${this.endpoint}/health`);
-      return res.ok;
-    } catch {
-      return false;
-    }
   }
 }
 
-module.exports = HueHisXmlAdapter;
+module.exports = HueXmlAdapter;

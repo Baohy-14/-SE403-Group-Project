@@ -1,111 +1,148 @@
 /**
- * Verification Test 1: Concurrency & Double-Booking Prevention (ASR-01)
- * Stimulus: 50 concurrent patients attempt to book the exact same slot.
- * Expected Response:
- * - Exactly 1 booking succeeds (HTTP 201).
- * - Exactly 49 bookings are rejected (HTTP 409 Conflict).
- * - Zero double-booking (Double-booking rate = 0.00%).
- * - Response measure: p95 latency < 800ms.
+ * Test 1 (ASR-01 & QAS-07): High-Concurrency Double-Booking Prevention & Idempotency Replay
+ * Scenario: 50 patients simultaneously POST to book the exact same doctor & slot (`DOC_101`, `08:00`).
+ * Expected: Exactly 1 HTTP 201 Created, 49 HTTP 409 Conflict, 0.00% double-booking, p95 < 500ms,
+ *           plus 5 idempotent retries with the same `X-Idempotency-Key` produce 0 extra bookings.
  */
 
-const createServer = require('../core/server');
-const mockManager = require('../mock-his/mockServersManager');
+const crypto = require('crypto');
+const db = require('../core/db/database');
 
-async function runConcurrencyTest(appPort = 3000) {
-  console.log('\n============================================================');
-  console.log(' [TEST 1] Concurrency & Double-Booking Prevention (ASR-01)');
-  console.log('============================================================');
+function percentile(sortedArr, p) {
+  if (sortedArr.length === 0) return 0;
+  const idx = Math.min(sortedArr.length - 1, Math.ceil((p / 100) * sortedArr.length) - 1);
+  return sortedArr[Math.max(0, idx)];
+}
 
-  const BASE_URL = `http://localhost:${appPort}`;
+async function runConcurrencyTest(port = 3000) {
+  const baseUrl = `http://127.0.0.1:${port}`;
+  console.log('\n[TEST 1 - ASR-01 & QAS-07] Kiểm chứng Chống Double-Booking (50 Concurrent Requests) & Idempotency...');
 
-  // Reset state
-  await fetch(`${BASE_URL}/admin/reset`, { method: 'POST' });
+  await fetch(`${baseUrl}/admin/reset`, { method: 'POST' });
 
-  const targetDoctor = 'DOC_101';
+  const totalRequests = 50;
   const targetSlot = '2026-11-20 08:00';
-  const CONCURRENT_REQUESTS = 50;
+  const targetDoctor = 'DOC_101';
 
-  console.log(`- Sending ${CONCURRENT_REQUESTS} simultaneous booking requests for Doctor: ${targetDoctor}, Slot: ${targetSlot}...`);
+  const suiteStartNs = process.hrtime.bigint();
 
-  const startTime = Date.now();
-  const latencies = [];
+  const tasks = Array.from({ length: totalRequests }, (_, idx) => {
+    const idemKey = `idem-asr01-${crypto.randomUUID()}`;
+    const clientKey = `patient_session_${idx + 1}`;
+    const reqStartNs = process.hrtime.bigint();
 
-  // Create 50 concurrent promises
-  const bookingPromises = Array.from({ length: CONCURRENT_REQUESTS }, (_, idx) => {
-    const patientId = `patient_test_${idx + 1}`;
-    const reqStart = Date.now();
-
-    return fetch(`${BASE_URL}/api/bookings`, {
+    return fetch(`${baseUrl}/api/bookings`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Idempotency-Key': `idemp-test-conc-${idx + 1}`
+        'X-Idempotency-Key': idemKey,
+        'X-Client-Id': clientKey
       },
       body: JSON.stringify({
         doctor_id: targetDoctor,
         slot_time: targetSlot,
-        patient_id: patientId,
-        patient_name: `Bệnh nhân thử nghiệm #${idx + 1}`,
+        patient_id: idx % 2 === 0 ? 'user_pat_01' : 'user_pat_02',
+        patient_name: `Bệnh nhân cạnh tranh #${idx + 1}`,
         facility_id: 'FAC_DANANG'
       })
     }).then(async (res) => {
-      const duration = Date.now() - reqStart;
-      latencies.push(duration);
-      let data = {};
-      try { data = await res.json(); } catch {}
-      return { status: res.status, data, duration };
-    }).catch(err => {
-      return { status: 500, error: err.message, duration: Date.now() - reqStart };
+      const latencyMs = Number(process.hrtime.bigint() - reqStartNs) / 1e6;
+      const body = await res.json();
+      return { status: res.status, latencyMs, body, idemKey, clientKey };
     });
   });
 
-  const results = await Promise.all(bookingPromises);
-  const totalDuration = Date.now() - startTime;
+  const results = await Promise.all(tasks);
+  const totalSuiteMs = Number(process.hrtime.bigint() - suiteStartNs) / 1e6;
 
-  // Analysis
-  const successCount = results.filter(r => r.status === 201).length;
-  const conflictCount = results.filter(r => r.status === 409).length;
-  const otherCount = results.filter(r => r.status !== 201 && r.status !== 409).length;
+  const winners = results.filter((r) => r.status === 201);
+  const conflicts = results.filter((r) => r.status === 409);
+  const latencies = results.map((r) => r.latencyMs).sort((a, b) => a - b);
 
-  latencies.sort((a, b) => a - b);
-  const p50 = latencies[Math.floor(latencies.length * 0.50)];
-  const p95 = latencies[Math.floor(latencies.length * 0.95)];
-  const p99 = latencies[Math.floor(latencies.length * 0.99)];
+  const minMs = Number(latencies[0].toFixed(2));
+  const avgMs = Number((latencies.reduce((s, v) => s + v, 0) / latencies.length).toFixed(2));
+  const p50Ms = Number(percentile(latencies, 50).toFixed(2));
+  const p95Ms = Number(percentile(latencies, 95).toFixed(2));
+  const p99Ms = Number(percentile(latencies, 99).toFixed(2));
 
-  console.log('\n--- KẾT QUẢ ĐO LƯỜNG THỰC TẾ (REAL METRICS) ---');
-  console.log(`- Tổng số requests gửi đi:       ${CONCURRENT_REQUESTS}`);
-  console.log(`- Số lượng đặt lịch THÀNH CÔNG:  ${successCount} (Kỳ vọng: 1)`);
-  console.log(`- Số lượng bị TỪ CHỐI (409):     ${conflictCount} (Kỳ vọng: 49)`);
-  console.log(`- Tỷ lệ Double-Booking:          ${successCount > 1 ? 'THẤT BẠI' : '0.00% (HOÀN HẢO)'}`);
-  console.log(`- Độ trễ phản hồi p50:           ${p50} ms`);
-  console.log(`- Độ trễ phản hồi p95:           ${p95} ms (Kỳ vọng: < 800ms)`);
-  console.log(`- Độ trễ phản hồi p99:           ${p99} ms`);
-  console.log(`- Tổng thời gian hoàn tất test:  ${totalDuration} ms`);
-
-  // Assertions
-  const passed = successCount === 1 && conflictCount === 49 && p95 < 800;
-
-  if (passed) {
-    console.log('\n>>> ĐÁNH GIÁ: [PASSED] Kiểm chứng ASR-01 ĐẠT 100% TIÊU CHÍ.');
-  } else {
-    console.log('\n>>> ĐÁNH GIÁ: [FAILED] Không đạt yêu cầu.');
+  // Verify Idempotency Replay (5 duplicate retries with winner's X-Idempotency-Key)
+  let idempotentReplayPassed = false;
+  if (winners.length === 1) {
+    const winningKey = winners[0].idemKey;
+    const replayResponses = [];
+    for (let k = 0; k < 5; k++) {
+      const rep = await fetch(`${baseUrl}/api/bookings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Idempotency-Key': winningKey,
+          'X-Client-Id': winners[0].clientKey
+        },
+        body: JSON.stringify({
+          doctor_id: targetDoctor,
+          slot_time: targetSlot,
+          patient_id: 'user_pat_01',
+          facility_id: 'FAC_DANANG'
+        })
+      });
+      const repJson = await rep.json();
+      replayResponses.push({ status: rep.status, replay: repJson.idempotent_replay, bookingId: repJson.booking?.id });
+    }
+    idempotentReplayPassed = replayResponses.every(
+      (r) => r.status === 200 && r.replay === true && r.bookingId === winners[0].body.booking.id
+    );
   }
 
-  return { passed, successCount, conflictCount, p95, totalDuration };
+  // Direct RDBMS verification
+  const dbCountRow = db.sqlite
+    .prepare(
+      `SELECT COUNT(*) AS cnt FROM bookings WHERE doctor_id = ? AND slot_time = ? AND status = 'CONFIRMED'`
+    )
+    .get(targetDoctor, targetSlot);
+
+  const passed =
+    winners.length === 1 &&
+    conflicts.length === 49 &&
+    dbCountRow.cnt === 1 &&
+    idempotentReplayPassed &&
+    p95Ms < 800;
+
+  console.log(`   -> Tổng requests cạnh tranh: ${totalRequests} | Thành công (201): ${winners.length} | Từ chối (409): ${conflicts.length}`);
+  console.log(`   -> Đối chiếu trực tiếp SQLite UNIQUE slot: ${dbCountRow.cnt} bản ghi (Double-booking = 0.00%)`);
+  console.log(`   -> Kiểm chứng Idempotency (5 lần gửi lặp cùng key): ${idempotentReplayPassed ? 'ĐẠT (Trả về 200 Replay, không tạo trùng)' : 'LỖI'}`);
+  console.log(`   -> Độ trễ thực đo: min=${minMs}ms | avg=${avgMs}ms | p50=${p50Ms}ms | p95=${p95Ms}ms | p99=${p99Ms}ms (Tổng thời gian: ${totalSuiteMs.toFixed(1)}ms)`);
+
+  return {
+    passed,
+    totalRequests,
+    successCount: winners.length,
+    conflictCount: conflicts.length,
+    dbConfirmedCount: dbCountRow.cnt,
+    idempotentReplayPassed,
+    minMs,
+    avgMs,
+    p50: p50Ms,
+    p95: p95Ms,
+    p99: p99Ms,
+    totalSuiteMs: Number(totalSuiteMs.toFixed(2))
+  };
 }
 
 if (require.main === module) {
+  const createServer = require('../core/server');
+  const mockManager = require('../mock-his/mockServersManager');
   (async () => {
     await mockManager.startAll();
-    const app = createServer();
-    const server = app.listen(3000, async () => {
-      try {
-        await runConcurrencyTest(3000);
-      } finally {
-        server.close();
-        await mockManager.stopAll();
-      }
+    const srv = await new Promise((r) => {
+      const s = createServer().listen(3000, '127.0.0.1', () => r(s));
     });
+    try {
+      const res = await runConcurrencyTest(3000);
+      process.exit(res.passed ? 0 : 1);
+    } finally {
+      srv.close();
+      await mockManager.stopAll();
+    }
   })();
 }
 

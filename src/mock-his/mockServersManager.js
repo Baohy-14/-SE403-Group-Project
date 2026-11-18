@@ -1,63 +1,63 @@
 /**
- * Mock Servers Manager
- * Starts and stops all mock HIS servers (Da Nang, Hue, Quang Nam)
+ * Mock HIS Cluster Manager (Convenience orchestrator for local single-command test runs)
  */
 
-const createDaNangServer = require('./hisDaNangServer');
-const createHueServer = require('./hisHueServer');
-const createQuangNamServer = require('./hisQuangNamServer');
+const { createDaNangHisServer } = require('./hisDaNangServer');
+const { createHueHisServer } = require('./hisHueServer');
+const { createQuangNamHisServer } = require('./hisQuangNamServer');
 
 class MockServersManager {
   constructor() {
-    this.servers = [];
+    this.servers = {};
+    this.hueController = null;
   }
 
-  async startAll(ports = { daNang: 8001, hue: 8002, quangNam: 8003 }) {
-    await this.stopAll();
+  async startAll({ daNangPort = 8001, huePort = 8002, quangNamPort = 8003 } = {}) {
+    const dnApp = createDaNangHisServer();
+    const hueObj = createHueHisServer();
+    const qnApp = createQuangNamHisServer();
+    this.hueController = hueObj;
 
-    const p1 = new Promise((resolve) => {
-      const app = createDaNangServer();
-      const server = app.listen(ports.daNang, () => {
-        // console.log(`[Mock HIS Da Nang] Started on port ${ports.daNang}`);
-        this.servers.push(server);
-        resolve();
-      });
+    this.servers.danang = await new Promise((resolve) => {
+      const s = dnApp.listen(daNangPort, '127.0.0.1', () => resolve(s));
+    });
+    this.servers.hue = await new Promise((resolve) => {
+      const s = hueObj.app.listen(huePort, '127.0.0.1', () => resolve(s));
+    });
+    this.servers.quangnam = await new Promise((resolve) => {
+      const s = qnApp.listen(quangNamPort, '127.0.0.1', () => resolve(s));
     });
 
-    const p2 = new Promise((resolve) => {
-      const app = createHueServer();
-      const server = app.listen(ports.hue, () => {
-        // console.log(`[Mock HIS Hue] Started on port ${ports.hue}`);
-        this.servers.push(server);
-        resolve();
-      });
-    });
+    return this.servers;
+  }
 
-    const p3 = new Promise((resolve) => {
-      const app = createQuangNamServer();
-      const server = app.listen(ports.quangNam, () => {
-        // console.log(`[Mock HIS Quang Nam] Started on port ${ports.quangNam}`);
-        this.servers.push(server);
-        resolve();
-      });
-    });
+  setHueChaosMode(mode) {
+    if (this.hueController) {
+      this.hueController.setChaosMode(mode);
+    }
+  }
 
-    await Promise.all([p1, p2, p3]);
+  getHueSyncedCount() {
+    return this.hueController ? this.hueController.getBookingCount() : 0;
   }
 
   async stopAll() {
-    for (const server of this.servers) {
-      await new Promise(resolve => server.close(resolve));
+    for (const key of Object.keys(this.servers)) {
+      const srv = this.servers[key];
+      if (srv) {
+        await new Promise((resolve) => srv.close(() => resolve()));
+      }
     }
-    this.servers = [];
+    this.servers = {};
   }
 }
 
+const manager = new MockServersManager();
+
 if (require.main === module) {
-  const manager = new MockServersManager();
   manager.startAll().then(() => {
-    console.log('All 3 Mock HIS Servers started successfully (Ports: 8001, 8002, 8003). Press Ctrl+C to stop.');
+    console.log('[Mock HIS Cluster] Started Đà Nẵng (8001), Huế (8002), Quảng Nam (8003)');
   });
 }
 
-module.exports = new MockServersManager();
+module.exports = manager;

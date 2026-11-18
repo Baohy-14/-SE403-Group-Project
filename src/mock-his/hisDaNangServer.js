@@ -1,57 +1,44 @@
 /**
- * Mock HIS Đà Nẵng Server
- * Protocol: REST / JSON
- * Port: 8001
+ * Mock HIS 1: Đà Nẵng Clinic Group (Modern REST / JSON Service - Port 8001)
+ * Supports idempotent booking confirmation via `X-Idempotency-Key`.
  */
 
-const express = require('express');
+const { createHttpApp } = require('../core/gateway/httpApp');
 
-function createDaNangServer() {
-  const app = express();
-  app.use(express.json());
-
-  let isEnabled = true;
-
-  // Toggle endpoint for fault injection testing
-  app.post('/admin/toggle', (req, res) => {
-    isEnabled = req.body.enabled !== undefined ? req.body.enabled : !isEnabled;
-    res.json({ facility: 'FAC_DANANG', enabled: isEnabled });
-  });
+function createDaNangHisServer() {
+  const app = createHttpApp();
+  const records = new Map();
 
   app.get('/health', (req, res) => {
-    if (!isEnabled) return res.status(503).json({ status: 'DOWN' });
-    res.json({ status: 'UP', system: 'Da Nang HIS Web Service' });
+    res.json({ status: 'UP', his: 'HIS_DANANG_REST_V2', recordsCount: records.size });
   });
 
-  app.post('/api/appointments', (req, res) => {
-    if (!isEnabled) {
-      return res.status(503).json({ error: 'HIS_DANANG_UNAVAILABLE' });
+  app.post('/api/v2/appointments', (req, res) => {
+    const idemKey = req.headers['x-idempotency-key'] || req.body.externalBookingUuid;
+    if (idemKey && records.has(idemKey)) {
+      return res.status(200).json(records.get(idemKey));
     }
 
-    const { booking_ref, patient_name, doctor_code, appointment_time } = req.body;
-    const hisId = `DN-HIS-${Date.now().toString().slice(-6)}`;
+    const confirmation = {
+      status: 'ACCEPTED',
+      dnConfirmationCode: `DN-HIS-${1000 + records.size + 1}`,
+      patientUuid: req.body.patientUuid,
+      practitionerCode: req.body.practitionerCode,
+      scheduledIsoStart: req.body.scheduledIsoStart
+    };
 
-    res.status(200).json({
-      success: true,
-      his_appointment_id: hisId,
-      booking_ref,
-      patient_name,
-      doctor_code,
-      appointment_time,
-      status: 'CONFIRMED_AT_DANANG_HIS',
-      created_at: new Date().toISOString()
-    });
+    if (idemKey) records.set(idemKey, confirmation);
+    res.status(201).json(confirmation);
   });
 
   return app;
 }
 
 if (require.main === module) {
-  const app = createDaNangServer();
-  const port = process.env.PORT || 8001;
-  app.listen(port, () => {
-    console.log(`[Mock HIS Đà Nẵng] running at http://localhost:${port}`);
+  const port = parseInt(process.env.PORT || '8001', 10);
+  createDaNangHisServer().listen(port, () => {
+    console.log(`[Mock HIS Đà Nẵng - REST/JSON] Listening on port ${port}`);
   });
 }
 
-module.exports = createDaNangServer;
+module.exports = { createDaNangHisServer };

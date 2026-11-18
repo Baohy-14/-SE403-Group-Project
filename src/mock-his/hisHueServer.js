@@ -1,75 +1,89 @@
 /**
- * Mock HIS Huế Server (Legacy SOAP / XML)
- * Protocol: SOAP / XML Web Service
- * Port: 8002
+ * Mock HIS 2: Huế Clinic Group (Legacy SOAP 1.1 / XML Service - Port 8002)
+ * Includes Fault-Injection Chaos Controller (`UP` | `DOWN_503` | `TIMEOUT_HANG`)
+ * to verify ASR-02 (2-hour HIS outage isolation via Circuit Breaker & Outbox recovery).
  */
 
-const express = require('express');
+const { createHttpApp } = require('../core/gateway/httpApp');
 
-function createHueServer() {
-  const app = express();
-
-  // Parse raw text for XML
-  app.use(express.text({ type: '*/*' }));
-
-  let isEnabled = true;
-
-  // Toggle endpoint for fault injection testing
-  app.post('/admin/toggle', (req, res) => {
-    try {
-      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-      isEnabled = body.enabled !== undefined ? body.enabled : !isEnabled;
-    } catch {
-      isEnabled = !isEnabled;
-    }
-    res.json({ facility: 'FAC_HUE', enabled: isEnabled });
-  });
+function createHueHisServer() {
+  const app = createHttpApp();
+  const xmlBookings = new Map();
+  let chaosMode = 'UP'; // 'UP' | 'DOWN_503' | 'TIMEOUT_HANG'
 
   app.get('/health', (req, res) => {
-    if (!isEnabled) return res.status(503).send('Service Unavailable');
-    res.send('<status>UP</status>');
+    if (chaosMode !== 'UP') {
+      return res.status(503).json({ status: 'DOWN', chaosMode });
+    }
+    res.json({ status: 'UP', his: 'HIS_HUE_SOAP_XML_2018', chaosMode, count: xmlBookings.size });
   });
 
-  app.post('/ws/appointmentService.asmx', (req, res) => {
-    if (!isEnabled) {
-      return res.status(503).send(`<?xml version="1.0" encoding="utf-8"?>
-<soap:Fault>
-  <faultcode>soap:Server</faultcode>
-  <faultstring>Phần mềm HIS Huế đang bảo trì hoặc mất kết nối máy chủ dữ liệu.</faultstring>
-</soap:Fault>`);
+  // Chaos engineering control endpoint for automated & live demo fault injection
+  app.post('/chaos/mode', (req, res) => {
+    chaosMode = req.body.mode || 'UP';
+    res.json({ success: true, chaosMode });
+  });
+
+  app.post('/ws/AppointmentService.asmx', async (req, res) => {
+    if (chaosMode === 'DOWN_503') {
+      const faultXml = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <soap:Fault>
+      <faultcode>soap:Server</faultcode>
+      <faultstring>Database Connection Lost at Hue Clinic Server</faultstring>
+    </soap:Fault>
+  </soap:Body>
+</soap:Envelope>`;
+      return res.status(503).send(faultXml, 'text/xml; charset=utf-8');
     }
 
-    const xml = req.body || '';
-    const matchId = xml.match(/<his:ExternalBookingId>(.*?)<\/his:ExternalBookingId>/);
-    const bookingId = matchId ? matchId[1] : 'UNKNOWN';
-    const ticketNo = `HUE-SOAP-${Date.now().toString().slice(-6)}`;
+    if (chaosMode === 'TIMEOUT_HANG') {
+      // Simulate hung network socket exceeding MediLink's 1500ms timeout budget
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+      return res.status(504).send('Gateway Timeout');
+    }
+
+    const rawXml = req.rawBody || '';
+    const idemMatch = rawXml.match(/<hue:IdempotencyToken>([^<]+)<\/hue:IdempotencyToken>/);
+    const patMatch = rawXml.match(/<hue:MaBenhNhanYTe>([^<]+)<\/hue:MaBenhNhanYTe>/);
+    const idemToken = idemMatch ? idemMatch[1] : null;
+
+    let hueCode = idemToken && xmlBookings.has(idemToken) ? xmlBookings.get(idemToken) : null;
+    if (!hueCode) {
+      hueCode = `HUE-XML-${2000 + xmlBookings.size + 1}`;
+      if (idemToken) xmlBookings.set(idemToken, hueCode);
+    }
 
     const responseXml = `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:his="http://huehospital.vn/his/ws">
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
-    <his:RegisterAppointmentResponse>
-      <his:ResultStatus>SUCCESS</his:ResultStatus>
-      <his:ExternalBookingId>${bookingId}</his:ExternalBookingId>
-      <his:HisReceptionTicketNumber>${ticketNo}</his:HisReceptionTicketNumber>
-      <his:AssignedRoom>Phong 204 - Khoa Kham Benh</his:AssignedRoom>
-      <his:Message>Tiep nhan lich hen kham tu MediLink thanh cong.</his:Message>
-    </his:RegisterAppointmentResponse>
+    <DangKyLichKhamResponse xmlns="http://his.hueclinic.vn/ws/2018">
+      <TrangThai>THANH_CONG</TrangThai>
+      <MaTiepDonHue>${hueCode}</MaTiepDonHue>
+      <MaBenhNhanXacNhan>${patMatch ? patMatch[1] : 'UNKNOWN'}</MaBenhNhanXacNhan>
+    </DangKyLichKhamResponse>
   </soap:Body>
 </soap:Envelope>`;
 
-    res.set('Content-Type', 'text/xml; charset=utf-8');
-    res.status(200).send(responseXml);
+    res.status(200).send(responseXml, 'text/xml; charset=utf-8');
   });
 
-  return app;
+  return {
+    app,
+    setChaosMode: (mode) => {
+      chaosMode = mode;
+    },
+    getBookingCount: () => xmlBookings.size
+  };
 }
 
 if (require.main === module) {
-  const app = createHueServer();
-  const port = process.env.PORT || 8002;
+  const port = parseInt(process.env.PORT || '8002', 10);
+  const { app } = createHueHisServer();
   app.listen(port, () => {
-    console.log(`[Mock HIS Huế] running at http://localhost:${port}`);
+    console.log(`[Mock HIS Huế - Legacy SOAP/XML] Listening on port ${port}`);
   });
 }
 
-module.exports = createHueServer;
+module.exports = { createHueHisServer };

@@ -1,7 +1,7 @@
 /**
- * Tamper-Evident Audit Service
- * Implements HMAC-SHA256 Cryptographic Hash Chaining (Blockchain-like Append-Only log)
- * Guarantees Non-repudiation and Compliance with Nghị định 13/2023/NĐ-CP
+ * Tamper-Evident Append-Only Audit Service (Implements ADR-004 & Constraint C-04)
+ * Persists every access/violation event into SQLite `audit_logs` (protected by SQLite
+ * BEFORE UPDATE/DELETE triggers) AND links each entry via HMAC-SHA256 Cryptographic Hash Chain.
  */
 
 const crypto = require('crypto');
@@ -11,58 +11,97 @@ const db = require('../db/database');
 const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
 
 class AuditService {
-  constructor() {
-    this.secret = config.HMAC_AUDIT_SECRET;
-  }
-
-  /**
-   * Calculate HMAC-SHA256
-   */
-  calculateHash(prevHash, payload) {
-    const rawString = `${prevHash}|${payload.timestamp}|${payload.actorId}|${payload.actorRole}|${payload.facilityId}|${payload.action}|${payload.targetResource}|${payload.status}|${payload.details || ''}`;
-    return crypto.createHmac('sha256', this.secret).update(rawString).digest('hex');
-  }
-
-  /**
-   * Log an event into the immutable audit chain
-   */
-  logSecurityEvent({ actorId, actorRole, facilityId, action, targetResource, ipAddress, status, details }) {
-    const logs = db.auditLogs;
-    const prevHash = logs.length > 0 ? logs[logs.length - 1].current_hash : GENESIS_HASH;
-
-    const timestamp = new Date().toISOString();
-    const payload = {
+  computeHmac({ prevHash, timestamp, actorId, actorRole, facilityId, action, targetResource, ipAddress, status, details }) {
+    const canonicalPayload = [
+      prevHash,
       timestamp,
-      actorId: actorId || 'UNKNOWN',
-      actorRole: actorRole || 'UNKNOWN',
-      facilityId: facilityId || 'SYSTEM',
+      actorId,
+      actorRole,
+      facilityId,
       action,
-      targetResource: targetResource || 'N/A',
-      ipAddress: ipAddress || '127.0.0.1',
-      status: status || 'INFO',
-      details: details || ''
-    };
+      targetResource,
+      ipAddress,
+      status,
+      details
+    ].join('|');
 
-    const currentHash = this.calculateHash(prevHash, payload);
-
-    const logEntry = {
-      id: logs.length + 1,
-      prev_hash: prevHash,
-      current_hash: currentHash,
-      ...payload
-    };
-
-    // Strictly Append-Only!
-    logs.push(logEntry);
-    return logEntry;
+    return crypto
+      .createHmac('sha256', config.HMAC_AUDIT_SECRET)
+      .update(canonicalPayload, 'utf8')
+      .digest('hex');
   }
 
-  /**
-   * Get all logs (read-only)
-   */
-  getLogs() {
-    return [...db.auditLogs];
+  logSecurityEvent({
+    actorId = 'SYSTEM',
+    actorRole = 'SYSTEM',
+    facilityId = 'CENTRAL',
+    action,
+    targetResource,
+    ipAddress = '127.0.0.1',
+    status = 'SUCCESS',
+    details = ''
+  }) {
+    const timestamp = new Date().toISOString();
+
+    const lastRow = db.sqlite
+      .prepare('SELECT current_hash FROM audit_logs ORDER BY id DESC LIMIT 1')
+      .get();
+    const prevHash = lastRow ? lastRow.current_hash : GENESIS_HASH;
+
+    const currentHash = this.computeHmac({
+      prevHash,
+      timestamp,
+      actorId,
+      actorRole,
+      facilityId,
+      action,
+      targetResource,
+      ipAddress,
+      status,
+      details
+    });
+
+    const res = db.sqlite
+      .prepare(
+        `INSERT INTO audit_logs (
+          timestamp, actor_id, actor_role, facility_id, action,
+          target_resource, ip_address, status, details, prev_hash, current_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        timestamp,
+        actorId,
+        actorRole,
+        facilityId,
+        action,
+        targetResource,
+        ipAddress,
+        status,
+        details,
+        prevHash,
+        currentHash
+      );
+
+    return {
+      id: Number(res.lastInsertRowid),
+      timestamp,
+      actor_id: actorId,
+      actor_role: actorRole,
+      facility_id: facilityId,
+      action,
+      target_resource: targetResource,
+      status,
+      prev_hash: prevHash,
+      current_hash: currentHash
+    };
+  }
+
+  getLogs(limit = 200) {
+    return db.sqlite
+      .prepare('SELECT * FROM audit_logs ORDER BY id ASC LIMIT ?')
+      .all(limit);
   }
 }
 
 module.exports = new AuditService();
+module.exports.GENESIS_HASH = GENESIS_HASH;

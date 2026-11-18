@@ -1,53 +1,43 @@
 /**
- * Mock HIS Quảng Nam Server
- * Protocol: Custom REST RPC
- * Port: 8003
+ * Mock HIS 3: Quảng Nam Clinic Group (Legacy Custom RPC Service - Port 8003)
+ * Uses integer local patient key `ma_bn_noi_bo` & stored-procedure style RPC JSON.
  */
 
-const express = require('express');
+const { createHttpApp } = require('../core/gateway/httpApp');
 
-function createQuangNamServer() {
-  const app = express();
-  app.use(express.json());
-
-  let isEnabled = true;
-
-  app.post('/admin/toggle', (req, res) => {
-    isEnabled = req.body.enabled !== undefined ? req.body.enabled : !isEnabled;
-    res.json({ facility: 'FAC_QUANGNAM', enabled: isEnabled });
-  });
+function createQuangNamHisServer() {
+  const app = createHttpApp();
+  const tickets = new Map();
 
   app.get('/health', (req, res) => {
-    if (!isEnabled) return res.status(503).json({ error: 'DOWN' });
-    res.json({ status: 'OK', system: 'Quang Nam Clinic HIS' });
+    res.json({ status: 'UP', his: 'HIS_QUANGNAM_RPC_V1', count: tickets.size });
   });
 
-  app.post('/his/v1/booking', (req, res) => {
-    if (!isEnabled) {
-      return res.status(503).json({ error: 'SERVICE_UNAVAILABLE' });
+  app.post('/his-rpc/v1/execute', (req, res) => {
+    const idemKey = req.headers['x-idempotency-key'] || req.body?.params?.ma_giao_dich_ngoai;
+    if (idemKey && tickets.has(idemKey)) {
+      return res.status(200).json(tickets.get(idemKey));
     }
 
-    const { params } = req.body;
-    const ticketNo = `QN-TICKET-${Date.now().toString().slice(-6)}`;
+    const reply = {
+      ma_ket_qua: 0,
+      thong_bao: 'GHI_NHAN_THANH_CONG',
+      so_phieu_kham: `QN-RPC-${3000 + tickets.size + 1}`,
+      ma_bn_noi_bo: req.body?.params?.ma_bn_noi_bo
+    };
 
-    res.status(200).json({
-      status: 'OK',
-      ticket_no: ticketNo,
-      patient: params?.bn_ten,
-      time: params?.gio_kham,
-      clinic: 'Tam Ky - Quang Nam'
-    });
+    if (idemKey) tickets.set(idemKey, reply);
+    res.status(200).json(reply);
   });
 
   return app;
 }
 
 if (require.main === module) {
-  const app = createQuangNamServer();
-  const port = process.env.PORT || 8003;
-  app.listen(port, () => {
-    console.log(`[Mock HIS Quảng Nam] running at http://localhost:${port}`);
+  const port = parseInt(process.env.PORT || '8003', 10);
+  createQuangNamHisServer().listen(port, () => {
+    console.log(`[Mock HIS Quảng Nam - Custom RPC] Listening on port ${port}`);
   });
 }
 
-module.exports = createQuangNamServer;
+module.exports = { createQuangNamHisServer };

@@ -1,58 +1,51 @@
 /**
- * Da Nang HIS Integration Adapter
- * Protocol: REST / JSON
+ * Concrete Adapter 1: HIS Đà Nẵng (Modern REST / JSON Schema)
+ * Translates HL7 FHIR R4 { Patient, Appointment } -> HIS Đà Nẵng REST JSON contract.
+ * Demonstrates heterogeneous patient ID mapping: MPI -> `pat_uuid_dn_*`.
  */
 
 const BaseHisAdapter = require('./baseAdapter');
-const config = require('../../config');
 
-class DaNangHisJsonAdapter extends BaseHisAdapter {
-  constructor() {
-    super('FAC_DANANG', 'DaNang_Modern_REST_HIS');
-    this.endpoint = config.HIS_DANANG_URL;
-  }
+class DaNangJsonAdapter extends BaseHisAdapter {
+  async syncAppointment(canonicalBundle, timeoutMs = 1500) {
+    const { patient, appointment } = canonicalBundle;
+    const localPatId =
+      patient.identifier.find((i) => i.system.includes(this.facilityId))?.value || patient.id;
+    const doctorRef =
+      appointment.participant.find((p) => p.actor.reference.startsWith('Practitioner/'))?.actor.reference || '';
+    const idemKey = appointment.identifier?.[0]?.value || appointment.id;
 
-  async syncAppointment(fhirAppointment) {
-    // 1. Transform FHIR to Da Nang REST payload
+    // Translate from HL7 FHIR R4 Canonical Model -> Da Nang HIS specific JSON payload
     const daNangPayload = {
-      hospital_code: 'HIS_DN_01',
-      booking_ref: fhirAppointment.id,
-      patient_name: fhirAppointment.participant[0]?.actor?.display || 'Bệnh nhân',
-      doctor_code: fhirAppointment.participant[1]?.actor?.reference.replace('Practitioner/', ''),
-      appointment_time: fhirAppointment.start,
-      notes: fhirAppointment.comment
+      externalBookingUuid: appointment.id,
+      patientUuid: localPatId,
+      patientFullName: patient.name?.[0]?.text || 'Unknown',
+      practitionerCode: doctorRef.replace('Practitioner/', ''),
+      scheduledIsoStart: appointment.start,
+      bookingChannel: 'MEDILINK_ONLINE'
     };
 
-    // 2. HTTP POST call
-    const response = await fetch(`${this.endpoint}/api/appointments`, {
+    const res = await fetch(`${this.baseUrl}/api/v2/appointments`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': 'DANANG-HIS-SECRET-KEY-99'
+        'X-Idempotency-Key': idemKey
       },
-      body: JSON.stringify(daNangPayload)
+      body: JSON.stringify(daNangPayload),
+      signal: AbortSignal.timeout(timeoutMs)
     });
 
-    if (!response.ok) {
-      throw new Error(`DaNang HIS HTTP Error: ${response.status} ${response.statusText}`);
+    if (!res.ok) {
+      throw new Error(`HIS_DANANG_HTTP_${res.status}`);
     }
 
-    const data = await response.json();
+    const data = await res.json();
     return {
       success: true,
-      hisReferenceCode: data.his_appointment_id || `DN-ACK-${Date.now()}`,
-      details: data
+      hisReferenceCode: data.dnConfirmationCode || `DN-${Date.now()}`,
+      protocol: 'REST_JSON'
     };
-  }
-
-  async checkHealth() {
-    try {
-      const res = await fetch(`${this.endpoint}/health`);
-      return res.ok;
-    } catch {
-      return false;
-    }
   }
 }
 
-module.exports = DaNangHisJsonAdapter;
+module.exports = DaNangJsonAdapter;

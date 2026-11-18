@@ -1,96 +1,130 @@
 /**
- * Circuit Breaker Pattern Implementation
- * Prevents cascading failures when external HIS systems are unresponsive
- * States: CLOSED, OPEN, HALF_OPEN
+ * Per-Facility Circuit Breaker & Bulkhead Fault Isolator (Implements ASR-02 & ADR-007)
+ * Finite State Machine: CLOSED -> OPEN -> HALF_OPEN -> CLOSED
+ * Protects MediLink Core from cascading failure / thread starvation when any facility HIS
+ * (e.g. HIS Huế) goes offline or hangs for 2 hours!
  */
+
+const config = require('../config');
 
 class CircuitBreaker {
   constructor(name, options = {}) {
     this.name = name;
-    this.failureThreshold = options.failureThreshold || 3;
-    this.resetTimeoutMs = options.resetTimeoutMs || 5000; // 5s before entering HALF_OPEN
-    this.timeoutMs = options.timeoutMs || 2000;
+    this.failureThreshold = options.failureThreshold || config.CB_FAILURE_THRESHOLD;
+    this.resetTimeoutMs = options.resetTimeoutMs || config.CB_RESET_TIMEOUT_MS;
+    this.timeoutBudgetMs = options.timeoutBudgetMs || config.HIS_TIMEOUT_MS;
+    this.halfOpenSuccessThreshold = options.halfOpenSuccessThreshold || 2;
 
-    this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
+    this.state = 'CLOSED';
     this.failureCount = 0;
-    this.lastFailureTime = null;
-    this.successCount = 0;
+    this.halfOpenSuccesses = 0;
+    this.openedAt = null;
+    this.lastError = null;
+    this.metrics = {
+      totalCalls: 0,
+      succeeded: 0,
+      failed: 0,
+      fastFailedOpen: 0
+    };
   }
 
-  async execute(actionFn, fallbackFn) {
-    const now = Date.now();
-
-    // Check if OPEN state has expired and should transition to HALF_OPEN
+  canAttempt() {
+    if (this.state === 'CLOSED' || this.state === 'HALF_OPEN') {
+      return true;
+    }
     if (this.state === 'OPEN') {
-      if (now - this.lastFailureTime > this.resetTimeoutMs) {
+      const elapsed = Date.now() - (this.openedAt || 0);
+      if (elapsed >= this.resetTimeoutMs) {
         this.state = 'HALF_OPEN';
-        this.successCount = 0;
-      } else {
-        // Fast-fail: Circuit is OPEN
-        if (fallbackFn) {
-          return fallbackFn(new Error(`CircuitBreaker [${this.name}] is OPEN (Fast-Fail)`));
-        }
-        const err = new Error(`CircuitBreaker [${this.name}] is OPEN (Fast-Fail). External service is down.`);
-        err.isCircuitBreakerOpen = true;
-        throw err;
+        this.halfOpenSuccesses = 0;
+        return true;
       }
+      return false;
+    }
+    return false;
+  }
+
+  async execute(actionFn) {
+    this.metrics.totalCalls += 1;
+
+    if (!this.canAttempt()) {
+      this.metrics.fastFailedOpen += 1;
+      const err = new Error(`CIRCUIT_OPEN_FAST_FAIL [${this.name}]`);
+      err.code = 'CIRCUIT_OPEN';
+      throw err;
     }
 
+    let timeoutHandle = null;
     try {
-      // Execute action with timeout
-      const result = await Promise.race([
-        actionFn(),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`Timeout after ${this.timeoutMs}ms calling ${this.name}`)), this.timeoutMs)
-        )
-      ]);
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          const tErr = new Error(`HIS_TIMEOUT_EXCEEDED_${this.timeoutBudgetMs}MS [${this.name}]`);
+          tErr.code = 'HIS_TIMEOUT';
+          reject(tErr);
+        }, this.timeoutBudgetMs);
+        if (typeof timeoutHandle.unref === 'function') timeoutHandle.unref();
+      });
 
-      // Success handling
+      const result = await Promise.race([actionFn(this.timeoutBudgetMs), timeoutPromise]);
+      clearTimeout(timeoutHandle);
       this.onSuccess();
       return result;
     } catch (err) {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       this.onFailure(err);
-      if (fallbackFn) {
-        return fallbackFn(err);
-      }
       throw err;
     }
   }
 
   onSuccess() {
-    this.failureCount = 0;
+    this.metrics.succeeded += 1;
     if (this.state === 'HALF_OPEN') {
-      this.successCount++;
-      if (this.successCount >= 2) {
+      this.halfOpenSuccesses += 1;
+      if (this.halfOpenSuccesses >= this.halfOpenSuccessThreshold) {
         this.state = 'CLOSED';
+        this.failureCount = 0;
+        this.openedAt = null;
+        this.lastError = null;
       }
+    } else {
+      this.failureCount = 0;
+      this.lastError = null;
     }
   }
 
   onFailure(err) {
-    this.failureCount++;
-    this.lastFailureTime = Date.now();
+    this.metrics.failed += 1;
+    this.failureCount += 1;
+    this.lastError = err.message;
 
     if (this.state === 'HALF_OPEN' || this.failureCount >= this.failureThreshold) {
       this.state = 'OPEN';
+      this.openedAt = Date.now();
     }
   }
 
-  getState() {
+  reset() {
+    this.state = 'CLOSED';
+    this.failureCount = 0;
+    this.halfOpenSuccesses = 0;
+    this.openedAt = null;
+    this.lastError = null;
+  }
+
+  getStatus() {
+    // Allow automatic inspection transition if reset window passed
+    if (this.state === 'OPEN' && Date.now() - (this.openedAt || 0) >= this.resetTimeoutMs) {
+      this.state = 'HALF_OPEN';
+      this.halfOpenSuccesses = 0;
+    }
     return {
-      name: this.name,
+      facility: this.name,
       state: this.state,
       failureCount: this.failureCount,
-      lastFailureTime: this.lastFailureTime ? new Date(this.lastFailureTime).toISOString() : null
+      failureThreshold: this.failureThreshold,
+      lastError: this.lastError,
+      metrics: { ...this.metrics }
     };
-  }
-
-  // Force state (useful for tests)
-  forceState(newState) {
-    this.state = newState;
-    if (newState === 'OPEN') {
-      this.lastFailureTime = Date.now();
-    }
   }
 }
 

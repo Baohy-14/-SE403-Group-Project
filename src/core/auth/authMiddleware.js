@@ -1,51 +1,50 @@
 /**
- * MediLink Security & Authentication Middleware
- * Validates user sessions and parses Role-Based Claims (RBAC)
+ * Authentication & Role-Based Access Control (RBAC) Middleware
+ * Verifies cryptographic HS256 JWT Bearer tokens and attaches verified principal to req.user.
  */
 
 const db = require('../db/database');
+const jwtService = require('./jwtService');
+const auditService = require('../audit/auditService');
 
 function authenticate(req, res, next) {
   const authHeader = req.headers['authorization'];
-  
-  if (!authHeader) {
-    // If no header, check for dev header or query param
-    const devUser = req.headers['x-dev-user'] || req.query.dev_user;
-    if (devUser) {
-      const user = db.getUserByUsername(devUser);
-      if (user) {
-        req.user = user;
-        return next();
-      }
+  if (!authHeader || !/^Bearer\s+/i.test(authHeader)) {
+    return res.status(401).json({
+      success: false,
+      error: 'MISSING_BEARER_TOKEN',
+      message: 'Thiếu thông tin xác thực JWT (Authorization: Bearer <token>).'
+    });
+  }
+
+  const rawToken = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+  try {
+    const claims = jwtService.verify(rawToken);
+    const user = db.getUserById(claims.sub);
+    if (!user) {
+      throw new Error('USER_NOT_FOUND');
     }
+    req.user = user;
+    req.jwtClaims = claims;
+    return next();
+  } catch (err) {
+    auditService.logSecurityEvent({
+      actorId: 'UNAUTHENTICATED',
+      actorRole: 'NONE',
+      facilityId: 'UNKNOWN',
+      action: 'AUTH_JWT_REJECTED',
+      targetResource: req.path,
+      ipAddress: req.ip,
+      status: 'DENIED_401',
+      details: `Xác thực JWT thất bại: ${err.message}`
+    });
     return res.status(401).json({
       success: false,
-      error: 'UNAUTHORIZED',
-      message: 'Thiếu thông tin xác thực. Vui lòng cung cấp Authorization Header (Bearer Token).'
+      error: err.message || 'INVALID_TOKEN',
+      message: 'JWT Token không hợp lệ, sai chữ ký hoặc đã hết hạn.'
     });
   }
-
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-
-  // In production, verify JWT with config.JWT_SECRET.
-  // For standard mock/testing, parse token format: "token:<username>" or look up username.
-  let username = token;
-  if (token.startsWith('token:')) {
-    username = token.replace('token:', '');
-  }
-
-  const user = db.getUserByUsername(username) || db.getUserById(username);
-
-  if (!user) {
-    return res.status(401).json({
-      success: false,
-      error: 'INVALID_TOKEN',
-      message: 'Token xác thực không hợp lệ hoặc người dùng không tồn tại.'
-    });
-  }
-
-  req.user = user;
-  next();
 }
 
 function requireRoles(...allowedRoles) {
@@ -53,16 +52,24 @@ function requireRoles(...allowedRoles) {
     if (!req.user) {
       return res.status(401).json({ success: false, error: 'UNAUTHORIZED' });
     }
-
     if (!allowedRoles.includes(req.user.role)) {
+      auditService.logSecurityEvent({
+        actorId: req.user.id,
+        actorRole: req.user.role,
+        facilityId: req.user.facility_id || 'NONE',
+        action: 'RBAC_ROLE_DENIED',
+        targetResource: req.path,
+        ipAddress: req.ip,
+        status: 'DENIED_403',
+        details: `Vai trò [${req.user.role}] bị chặn truy cập endpoint yêu cầu [${allowedRoles.join(', ')}]`
+      });
       return res.status(403).json({
         success: false,
         error: 'ROLE_FORBIDDEN',
-        message: `Vai trò [${req.user.role}] không có quyền thực hiện thao tác này.`
+        message: `Vai trò [${req.user.role}] không có thẩm quyền thực hiện thao tác này.`
       });
     }
-
-    next();
+    return next();
   };
 }
 

@@ -1,19 +1,18 @@
-# Dockerfile for MediLink Platform
-FROM node:20-alpine
+# Multi-role lightweight Node.js 22 LTS Alpine image (built-in node:sqlite, node:crypto, node:net)
+FROM node:22-alpine
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy zero-dependency MediLink Platform source code
+COPY package.json ./
+COPY core ./core
+COPY worker ./worker
+COPY mock-his ./mock-his
+COPY tests ./tests
 
-# Install production dependencies
-RUN npm ci --only=production
+# Create persistent storage mountpoints for SQLite WAL DB & Encrypted Lab Object Bucket
+RUN mkdir -p /data/db /data/lab-files
 
-# Copy application source code
-COPY . .
+EXPOSE 3000
 
-# Expose ports
-EXPOSE 3000 8001 8002 8003
-
-# Default entrypoint starts all mock servers and the core server
-CMD ["node", "-e", "require('./mock-his/mockServersManager').startAll().then(() => require('./core/server')().listen(3000, () => console.log('MediLink Platform & Mock HIS Servers Ready on Port 3000, 8001, 8002, 8003')));"]
+CMD ["node", "--no-warnings", "core/server.js"]

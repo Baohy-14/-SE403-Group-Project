@@ -1,27 +1,153 @@
-version: '3.8'
+# ==============================================================================
+# MediLink Platform (Architecture v2) - Production-Aligned Docker Compose
+# Maps 1:1 with C4 Container View & Deployment View (Isolated Trust Networks)
+# ==============================================================================
 
 services:
+  # 1. MediLink Modular Monolith Core API (Ingress Rate Limiter + Auth/ABAC + Booking + EHR + ACL)
   medilink-core:
     build:
       context: ./src
       dockerfile: Dockerfile
-    container_name: medilink-core-app
+    container_name: medilink-core
+    command: ["node", "--no-warnings", "core/server.js"]
     ports:
       - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_PATH=/data/db/medilink.db
+      - LAB_STORAGE_DIR=/data/lab-files
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - HIS_DANANG_URL=http://mock-his-danang:8001
+      - HIS_HUE_URL=http://mock-his-hue:8002
+      - HIS_QUANGNAM_URL=http://mock-his-quangnam:8003
+      - JWT_SECRET=medilink-se403-jwt-hs256-signing-secret-2026
+      - DATA_ENCRYPTION_KEY=medilink-aes256gcm-master-ehr-key-separated-from-db-2026
+      - HMAC_AUDIT_SECRET=medilink-hmac-sha256-tamper-evident-audit-secret-2026
+      - FILE_SIGNING_SECRET=medilink-presigned-lab-object-url-secret-2026
+    volumes:
+      - medilink_storage:/data
+    networks:
+      - app-net
+      - data-net
+      - his-net
+    depends_on:
+      redis:
+        condition: service_healthy
+      mock-his-danang:
+        condition: service_started
+      mock-his-hue:
+        condition: service_started
+      mock-his-quangnam:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  # 2. Background Worker (Outbox Rate-Controlled Sync + Notification Queue + Audit Verifier)
+  medilink-worker:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    container_name: medilink-worker
+    command: ["node", "--no-warnings", "worker/backgroundWorker.js"]
+    environment:
+      - NODE_ENV=production
+      - DB_PATH=/data/db/medilink.db
+      - LAB_STORAGE_DIR=/data/lab-files
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - HIS_DANANG_URL=http://mock-his-danang:8001
+      - HIS_HUE_URL=http://mock-his-hue:8002
+      - HIS_QUANGNAM_URL=http://mock-his-quangnam:8003
+      - DATA_ENCRYPTION_KEY=medilink-aes256gcm-master-ehr-key-separated-from-db-2026
+      - HMAC_AUDIT_SECRET=medilink-hmac-sha256-tamper-evident-audit-secret-2026
+    volumes:
+      - medilink_storage:/data
+    networks:
+      - app-net
+      - data-net
+      - his-net
+    depends_on:
+      medilink-core:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # 3. Redis In-Memory Lock & Fencing Counter Store (Isolated on data-net, NO host port exposed!)
+  redis:
+    image: redis:7-alpine
+    container_name: medilink-redis
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - data-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # 4. Mock HIS Group A - Đà Nẵng (Modern REST / JSON API)
+  mock-his-danang:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    container_name: mock-his-danang
+    command: ["node", "--no-warnings", "mock-his/hisDaNangServer.js"]
+    ports:
       - "8001:8001"
+    environment:
+      - PORT=8001
+    networks:
+      - his-net
+    restart: unless-stopped
+
+  # 5. Mock HIS Group B - Huế (Legacy SOAP 1.1 / XML Service - Supports `docker stop mock-his-hue` demo!)
+  mock-his-hue:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    container_name: mock-his-hue
+    command: ["node", "--no-warnings", "mock-his/hisHueServer.js"]
+    ports:
       - "8002:8002"
+    environment:
+      - PORT=8002
+    networks:
+      - his-net
+    restart: unless-stopped
+
+  # 6. Mock HIS Group C - Quảng Nam (Legacy Custom RPC JSON Service)
+  mock-his-quangnam:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    container_name: mock-his-quangnam
+    command: ["node", "--no-warnings", "mock-his/hisQuangNamServer.js"]
+    ports:
       - "8003:8003"
     environment:
-      - PORT=3000
-      - NODE_ENV=production
-      - HIS_DANANG_URL=http://localhost:8001
-      - HIS_HUE_URL=http://localhost:8002
-      - HIS_QUANGNAM_URL=http://localhost:8003
-      - JWT_SECRET=medilink-production-jwt-token-key-2026
-      - HMAC_AUDIT_SECRET=medilink-audit-chain-tamper-proof-hmac-key-99
+      - PORT=8003
+    networks:
+      - his-net
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+
+networks:
+  app-net:
+    driver: bridge
+  data-net:
+    driver: bridge
+    internal: true
+  his-net:
+    driver: bridge
+
+volumes:
+  medilink_storage:
+  redis_data:

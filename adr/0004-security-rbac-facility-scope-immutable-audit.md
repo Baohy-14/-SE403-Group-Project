@@ -1,61 +1,61 @@
-# ADR-004: Mô hình Phân quyền Đa cơ sở (RBAC + ABAC) và Nhật ký Kiểm toán Bất biến (Tamper-Evident Audit Logging)
+# ADR-004: Kiến trúc Bảo mật Đa lớp – Phân quyền RBAC + Contextual ABAC + Consent, Mã hóa Cấp trường AES-256-GCM và Audit Log Append-Only HMAC
 
 - **Trạng thái (Status):** Accepted
-- **Ngày quyết định (Date):** 2026-11-08
-- **Người đề xuất (Author):** Lê Viết Nghĩa (Requirements Owner) & Nguyễn Đức Bảo Hy (Lead Architect)
-- **Người tham gia rà soát (Reviewers):** Nguyễn Quang Trường, Trần Tiến Danh
+- **Ngày quyết định (Date):** 2026-11-08 (Mốc M2)
+- **Truy vết ASR (Traces to):** `ASR-03` (Chặn lễ tân xem chéo hồ sơ cơ sở khác → 403 & ghi Audit), `QAS-05` (Chống sửa/xóa Audit Log), Ràng buộc pháp lý `C-01..C-04` (Nghị định 13/2023/NĐ-CP)
+- **Người đề xuất:** Lê Viết Nghĩa (Requirements & Doc Owner) & Nguyễn Đức Bảo Hy (Lead Architect)
+- **Người phản biện & phê duyệt:** Nguyễn Quang Trường, Trần Tiến Danh
 
 ---
 
 ## 1. Bối cảnh (Context)
 
-Nền tảng MediLink xử lý dữ liệu hồ sơ bệnh án (EHR) và kết quả xét nghiệm, thuộc danh mục **Dữ liệu cá nhân nhạy cảm** theo quy định tại Điều 2 & Điều 17 **Nghị định 13/2023/NĐ-CP**.
-Hệ thống phải giải quyết 2 thách thức bảo mật trọng tâm:
-1. **Kiểm soát ranh giới dữ liệu liên cơ sở (ASR-03):** Nhân viên lễ tân hoặc thu ngân tại cơ sở Đà Nẵng chỉ được phép xem thông tin bệnh nhân đăng ký khám tại cơ sở Đà Nẵng. Nếu cố tình truy cập hồ sơ của bệnh nhân thuộc cơ sở Huế hay Quảng Nam thì hệ thống phải chặn đứng (HTTP 403 Forbidden).
-2. **Tính toàn vẹn của vết kiểm toán (ASR-05):** 100% các hành vi đọc, ghi hoặc cố tình truy cập trái phép phải được ghi lại nhật ký kiểm toán không thể sửa hoặc xóa (Append-only & Tamper-evident), kể cả bởi Quản trị viên cơ sở dữ liệu (DBA).
+Hồ sơ sức khỏe điện tử (tiền sử bệnh, chẩn đoán ICD-10, đơn thuốc, kết quả xét nghiệm) thuộc nhóm **Dữ liệu cá nhân nhạy cảm** theo Khoản 4 Điều 2 **Nghị định 13/2023/NĐ-CP**. Nếu chỉ áp dụng "HTTPS và JWT" chung chung thì hệ thống sẽ mắc 4 lỗ hổng nghiêm trọng:
+1. **Truy cập chéo cơ sở (Broken Object Level Authorization - `ASR-03`):** Lễ tân Đà Nẵng và Lễ tân Huế cùng mang role `RECEPTIONIST`; nếu chỉ kiểm tra role, lễ tân Đà Nẵng có thể xem bệnh án của bệnh nhân tại Huế.
+2. **Lạm quyền xem dữ liệu lâm sàng:** Nhân viên lễ tân tại cùng cơ sở chỉ cần thông tin hành chính để tiếp đón, không có quyền đọc chẩn đoán bệnh nhạy cảm; bác sĩ cơ sở khác muốn xem bệnh sử liên thông phải có sự đồng ý (*Consent*) của bệnh nhân (Điều 11 Nghị định 13/2023).
+3. **Rò rỉ bản sao lưu cơ sở dữ liệu:** Nếu lưu chữ rõ (*plaintext*) trong bảng `medical_records`, kẻ tấn công lấy được file DB sẽ đọc được toàn bộ bệnh án.
+4. **Sửa/xóa dấu vết kiểm toán (`QAS-05`):** Nếu bảng `audit_logs` chỉ là bảng SQL thông thường, quản trị viên DB (DBA) có thể chạy lệnh `UPDATE`/`DELETE` để xóa dấu vết xem trộm hồ sơ người nổi tiếng.
 
 ---
 
-## 2. Các phương án được cân nhắc (Options Considered)
+## 2. Các phương án đã cân nhắc (Options Considered)
 
-### 2.1. Về Mô hình Phân quyền:
-1. **Phương án A: Phân quyền theo vai trò truyền thống (Pure RBAC)**
-   - *Đánh giá:* Chỉ gán vai trò: `PATIENT`, `DOCTOR`, `RECEPTIONIST`, `ADMIN`.
-   - *Hạn chế:* Không giải quyết được bài toán đa chi nhánh địa lý (Multi-tenancy / Multi-facility). Lễ tân Đà Nẵng và Lễ tân Huế đều có vai trò `RECEPTIONIST`. Nếu chỉ kiểm tra role, lễ tân Đà Nẵng vẫn đọc được toàn bộ bệnh nhân của Huế.
-2. **Phương án B: Phân quyền kết hợp RBAC và Contextual ABAC (Lựa chọn)**
-   - *Mô tả:* Kết hợp kiểm tra vai trò người dùng (Role) và đối chiếu động thuộc tính ngữ cảnh: `User.facility_id` và `Resource.facility_id`.
-   - *Chính sách (Policy):*
-     - Bác sĩ: Được xem hồ sơ nếu bác sĩ đó được phân công ca khám cho bệnh nhân đó.
-     - Lễ tân: Chỉ được xem danh sách và tiếp đón bệnh nhân có `appointment.facility_id == user.facility_id`.
-     - Bệnh nhân: Chỉ xem được hồ sơ của chính mình (`user.id == patient.user_id`).
+### 2.1. Về Mô hình Phân quyền Truy cập Hồ sơ
+- **Phương án A1 – Pure RBAC (Chỉ kiểm tra Role trong JWT):** Đơn giản nhưng thất bại hoàn toàn trước `ASR-03` vì không phân biệt được phạm vi cơ sở (`facility_id`) và quyền sở hữu hồ sơ (`patient_id`).
+- **Phương án A2 – Giải pháp Phân quyền doanh nghiệp tách rời (Keycloak + Open Policy Agent / Casbin Server riêng):** Rất mạnh nhưng tăng thêm 2 containers nặng nề và độ trễ mạng nội bộ, vượt quá nhu cầu của 5 vai trò cố định trong chuỗi phòng khám.
+- **Phương án A3 – Hybrid RBAC + Contextual ABAC + Explicit Consent kèm Data Masking *(Được chọn)*:**
+  - Xác thực danh tính qua chữ ký số JWT chuẩn RFC 7519 (`HS256`).
+  - Middleware `abacMiddleware.js` truy vấn trực tiếp thuộc tính gốc của bản ghi trong DB (`record.facility_id`, `record.patient_id`) — tuyệt đối không tin dữ liệu client gửi lên:
+    - `PATIENT`: Chỉ đọc hồ sơ có `record.patient_id === user.id`.
+    - `RECEPTIONIST`: Bắt buộc `user.facility_id === record.facility_id` (khác cơ sở → chặn `403` ngay); kể cả đúng cơ sở cũng chỉ trả về phạm vi `ADMIN_SUMMARY_ONLY` (ẩn toàn bộ chẩn đoán, đơn thuốc!).
+    - `DOCTOR`: Cùng cơ sở được đọc đầy đủ; khác cơ sở bắt buộc kiểm tra bảng `patient_consents` (`is_active = 1`), nếu chưa có Consent → chặn `403`.
+    - `DIRECTOR / ADMIN`: Chỉ xem thống kê tổng hợp ẩn danh, bị chặn `403` nếu cố mở bệnh án cá nhân.
 
-### 2.2. Về Cơ chế Nhật ký Kiểm toán (Audit Logging):
-1. **Phương án A: Ghi bảng log thông thường trong Database**
-   - *Đánh giá:* Quản trị viên hệ thống hoặc kẻ tấn công chiếm quyền SQL có thể chạy lệnh `UPDATE audit_logs SET action = '...'` hoặc `DELETE FROM audit_logs` để xóa dấu vết phạm tội. Không đáp ứng yêu cầu thanh tra pháp lý.
-2. **Phương án B: Chuỗi băm mật mã liên hoàn Append-Only (HMAC-SHA256 Cryptographic Chaining) (Lựa chọn)**
-   - *Mô tả:* Bảng `audit_logs` được cấu hình chỉ cho phép lệnh `INSERT` (Append-Only). Mỗi bản ghi log được liên kết mật mã với bản ghi liền trước (tương tự cơ chế Blockchain):
-     $$\text{current\_hash} = \text{HMAC-SHA256}(\text{SECRET\_KEY}, \text{prev\_hash} + \text{timestamp} + \text{actor\_id} + \text{action} + \text{resource\_id} + \text{status})$$
-   - *Cơ chế xác thực:* Một tiến trình nền định kỳ tính toán lại chuỗi băm từ bản ghi đầu tiên (Genesis) đến bản ghi cuối cùng. Nếu bất kỳ dòng log nào bị sửa đổi hoặc xóa, chuỗi băm sẽ bị đứt gãy ngay lập tức và báo động an ninh đỏ.
+### 2.2. Về Bảo vệ Dữ liệu Lưu trữ & Tính Bất biến của Nhật ký Kiểm toán
+- **Phương án B1 – Chỉ bật mã hóa ổ đĩa (Disk Encryption) & bảng SQL log thường:** Không chống được DBA hoặc lộ file dump SQL; không phát hiện được hành vi sửa log nội bộ.
+- **Phương án B2 – Lưu Audit Log lên dịch vụ Blockchain công cộng / Cloud WORM chuyên dụng:** Tốn phí giao dịch, độ trễ cao và phụ thuộc mạng Internet ngoài.
+- **Phương án B3 – Mã hóa cấp trường `AES-256-GCM` + RDBMS Append-Only Trigger + Chuỗi băm mật mã `HMAC-SHA256` *(Được chọn)*:**
+  - Các cột nhạy cảm (`diagnosis_enc`, `clinical_notes_enc`, `prescription_enc`, `lab_summary_enc`) được mã hóa xác thực bằng **`AES-256-GCM`** với IV 96-bit ngẫu nhiên và AAD gắn chặt vào `record.id`; khóa `DATA_ENCRYPTION_KEY` tách rời khỏi DB.
+  - Bảng `audit_logs` được gắn **SQLite Trigger `BEFORE UPDATE` & `BEFORE DELETE`** chặn mọi lệnh sửa/xóa thông thường, đồng thời mỗi dòng thứ $i$ lưu `prev_hash` của dòng $i-1$ và tính:
+    `current_hash = HMAC-SHA256(HMAC_AUDIT_SECRET, prev_hash | timestamp | actor_id | actor_role | facility_id | action | target | ip | status | details)`
+    với khóa `HMAC_AUDIT_SECRET` nằm ngoài quyền truy cập của DBA.
 
 ---
 
 ## 3. Quyết định (Decision)
 
-Nhóm quyết định lựa chọn:
-1. **Mô hình Phân quyền lai: RBAC kết hợp Contextual ABAC (kiểm tra `facility_id` tại API Gateway và Application Middleware).**
-2. **Cơ chế Nhật ký Kiểm toán Bất biến: Append-Only Audit Logging với chuỗi băm mật mã HMAC-SHA256 liên hoàn.**
+Nhóm quyết định áp dụng đồng bộ **Phương án A3 + Phương án B3**, tạo thành kiến trúc bảo mật phòng thủ chiều sâu 4 lớp (JWT → RBAC/ABAC/Consent → AES-256-GCM Field Encryption → Trigger + HMAC Hash Chain Audit).
 
 ---
 
 ## 4. Hệ quả (Consequences)
 
-### Tích cực (Positive):
-- Ngăn chặn triệt để lỗ hổng leo thang đặc quyền ngang hàng (BOLA / IDOR - Broken Object Level Authorization). Lễ tân không bao giờ xem chéo được dữ liệu cơ sở khác (đáp ứng 100% ASR-03).
-- Nhật ký kiểm toán có tính chứng cứ pháp lý cao, tuân thủ nghiêm ngặt Nghị định 13/2023/NĐ-CP về trách nhiệm giải trình và không thể chối bỏ (Non-repudiation).
-- Phát hiện tức thì bất kỳ can thiệp trái phép nào vào cơ sở dữ liệu.
+### Tích cực (Positive)
+- **Đáp ứng 100% `ASR-03` & Nghị định 13/2023/NĐ-CP:** Thực nghiệm chứng minh lễ tân Đà Nẵng cố đọc hồ sơ Huế bị chặn `HTTP 403` trong `2.37 ms`, dữ liệu rò rỉ = `0 byte`, ghi vết vi phạm tức thì.
+- **An toàn ngay cả khi lộ file DB hoặc DBA gian lận (`QAS-05`):** Truy vấn trực tiếp bảng `medical_records` chỉ thấy chuỗi bản mã `enc:v1:...`; nếu DBA dùng quyền root tắt tạm trigger để sửa 1 ký tự trong `audit_logs`, trình kiểm định `AuditVerifier` phát hiện chính xác dòng bị sửa trong `0.395 ms`.
 
-### Tiêu cực & Biện pháp giảm thiểu (Negative & Mitigations):
-- *Chi phí tính toán mật mã:* Tính mã HMAC cho mỗi request làm tăng nhẹ thời gian xử lý.
-  - *Biện pháp:* Tách việc ghi log sang cơ chế bất đồng bộ (Asynchronous Event / Worker) để phản hồi người dùng không bị chậm trễ.
-- *Bảo vệ khóa bí mật (Secret Key):* Nếu lộ khóa `HMAC_SECRET_KEY`, kẻ tấn công có thể tính toán lại toàn bộ chuỗi băm giả mạo.
-  - *Biện pháp:* Khóa bí mật được quản lý qua biến môi trường tách biệt (hoặc HashiCorp Vault), phân quyền truy cập nghiêm ngặt.
+### Tiêu cực & Biện pháp giảm thiểu (Negative & Mitigations)
+- **Hệ quả tiêu cực 1:** Không thể thực hiện tìm kiếm chuỗi `LIKE '%tiểu đường%'` trực tiếp bằng SQL trên các cột đã mã hóa `AES-256-GCM` với IV ngẫu nhiên.
+  - *Giảm thiểu:* Các trường định danh phục vụ lọc nhanh (`patient_id`, `patient_mpi`, `facility_id`, `doctor_id`, `created_at`) được giữ làm chỉ mục quan hệ; khi cần thống kê dịch tễ cho Ban Giám đốc thì dùng bảng tổng hợp ẩn danh theo nhóm mã ICD-10 cấp cao.
+- **Hệ quả tiêu cực 2:** Nếu làm mất `DATA_ENCRYPTION_KEY` thì toàn bộ dữ liệu bệnh án không thể khôi phục.
+  - *Giảm thiểu:* Trong môi trường Production, quản lý khóa qua KMS/Vault có cơ chế sao lưu phân mảnh khóa (Key Rotation & Envelope Encryption).

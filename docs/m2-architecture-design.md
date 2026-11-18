@@ -1,425 +1,356 @@
-# M2 – Architecture Design v1: Hệ thống MediLink
+# Mốc M2 – Thiết kế Kiến trúc (Architecture Design): Hệ thống MediLink
 
-## 1. Lựa chọn Kiến trúc và Tactics cho từng ASR (Architectural Tactics Selection)
-
-Dựa trên danh mục kiến trúc chuẩn của Len Bass, Paul Clements và Rick Kazman (*Software Architecture in Practice*), nhóm tiến hành lựa chọn các architectural tactics phù hợp nhất cho 4 ASR cốt lõi mức (H, H) đã xác định tại M1.
-
----
-
-### 1.1. Tactics cho ASR-01: Chống đặt trùng lịch (Consistency & Concurrency)
-
-- **Mục tiêu:** Đảm bảo khi 50 request cùng gửi lệnh đặt cùng 1 slot khám của 1 bác sĩ, chỉ có duy nhất 1 booking thành công (double-booking = 0%).
-- **Các Tactics ứng viên được cân nhắc:**
-  1. *Pessimistic Locking (Khóa bi quan tại RDBMS):* Sử dụng câu lệnh `SELECT ... FOR UPDATE` trên hàng dữ liệu của slot khám trong Database.
-     - *Ưu điểm:* Dễ hiện thực trên cơ sở dữ liệu quan hệ, đảm bảo tính nhất quán tuyệt đối của ACID transaction.
-     - *Nhược điểm:* Giữ lock database lâu, dễ gây nghẽn kết nối (connection pool exhaustion), giảm nghiêm trọng thông lượng ghi khi có nhiều request đồng thời; không mở rộng được khi có nhiều replica database hoặc ứng dụng phân tán.
-  2. *Optimistic Locking (Khóa lạc quan với phiên bản Version/Timestamp):* Bổ sung cột `version` vào bảng slot, khi update kiểm tra `WHERE id = ? AND version = ?`.
-     - *Ưu điểm:* Không khóa tài nguyên trong quá trình đọc và xác thực, thông lượng cao khi tỷ lệ tranh chấp thấp.
-     - *Nhược điểm:* Khi có tranh chấp cao (50 người cùng giành 1 slot), 49 người sẽ bị fail liên tiếp dẫn đến hiện tượng tải giả tạo (retry storm), lãng phí tài nguyên CPU tính toán nghiệp vụ trước khi phát hiện xung đột ở bước ghi cuối cùng.
-  3. *Distributed Lock (Khóa phân tán trên In-memory Store - Redis) kết hợp Idempotency Key & DB Unique Constraint:* Trước khi kiểm tra và ghi nhận lịch, tiến trình phải giành được Distributed Lock trên Redis với khóa duy nhất `lock:slot:{doctor_id}:{slot_time}` có TTL ngắn (3-5 giây). Sau khi giữ lock thành công, kiểm tra trạng thái slot, ghi nhận booking vào DB với ràng buộc duy nhất `UNIQUE(doctor_id, slot_time)` và phát hành Idempotency Key.
-- **Tactic được lựa chọn:** **Distributed Lock (Redis Redlock Pattern) đa tầng kết hợp RDBMS Unique Constraint và Idempotency Key.**
-- **Biện luận:** Tactic này chặn đứng xung đột ngay tại cửa ngõ bộ nhớ trong (In-Memory) với độ trễ tính bằng mili-giây (< 2ms), loại bỏ hoàn toàn tải tranh chấp vào RDBMS. Ràng buộc `UNIQUE` ở tầng Database đóng vai trò là chốt chặn cuối cùng (Last-mile defense), loại trừ rủi ro do trễ mạng hoặc lỗi phần mềm.
-
-> **Tự kiểm tra Bước 7 (ASR-01): Tactic đã chọn ảnh hưởng tiêu cực tới QA nào khác?**
-> *Trả lời:* Tactic Distributed Lock gây ảnh hưởng tiêu cực đến **Performance / Latency** đối với các request đến sau (phải chờ giải phóng lock hoặc bị từ chối ngay lập tức) và làm tăng độ phức tạp trong bảo trì **Availability** vì hệ thống giờ đây phụ thuộc thêm vào tính sẵn sàng của cụm Redis. Nếu Redis gặp sự cố, luồng lock có thể bị gián đoạn. Nhóm giải quyết bằng cách thiết lập TTL tự động giải phóng lock sau 3 giây và cấu hình Redis Sentinel dự phòng.
+- **Môn học:** SE 403 – Thiết kế Kiến trúc Phần mềm
+- **Đề tài 1:** MediLink – Nền tảng đặt lịch khám và hồ sơ sức khỏe điện tử
+- **Sản phẩm bàn giao M2:** Lựa chọn Tactics theo Bass et al. cho từng ASR, Thiết kế chống Double-Booking, Thiết kế lớp Tích hợp HIS & chế độ Đồng bộ/Bất đồng bộ từng luồng, Bảng so sánh Phong cách Kiến trúc Tổng thể, Hệ thống Khung nhìn C4 (Context, Container, Component), Deployment View, 2 Sequence Diagrams và Danh mục ADRs.
 
 ---
 
-### 1.2. Tactics cho ASR-02: Cách ly sự cố HIS cơ sở (Availability & Fault Tolerance)
+## 1. Lựa chọn Chiến thuật Kiến trúc cho từng ASR (Architectural Tactics – Bước 7)
 
-- **Mục tiêu:** Khi HIS của cơ sở Huế sập hoặc mất kết nối 2 giờ, 11 cơ sở còn lại vẫn vận hành bình thường, độ sẵn sàng toàn hệ thống đạt ≥ 99.5%.
-- **Các Tactics ứng viên được cân nhắc:**
-  1. *Active Redundancy / Replication (Dự phòng nóng hai máy chủ):* Yêu cầu phía phòng khám Huế trang bị cụm máy chủ dự phòng kép.
-     - *Đánh giá:* Bất khả thi vì HIS Huế là hệ thống di sản do đơn vị địa phương tự vận hành, vượt quá quyền kiểm soát và ngân sách của dự án MediLink.
-  2. *Retries with Exponential Backoff (Thử lại với độ lùi lũy thừa):* Tự động gọi lại HIS khi gặp timeout.
-     - *Đánh giá:* Khi HIS Huế sập hoàn toàn trong 2 giờ, việc gọi lại liên tục sẽ làm nghẽn toàn bộ luồng kết nối (Thread pool exhaustion) của MediLink, dẫn tới sập dây chuyền (Cascading Failure).
-  3. *Circuit Breaker kết hợp Graceful Degradation & Asynchronous Outbox:* Bọc các cuộc gọi sang từng HIS bằng bộ ngắt mạch Circuit Breaker riêng biệt (ngưỡng 50% lỗi trong 10 giây sẽ OPEN mạch). Khi mạch OPEN, request được trả về ngay lập tức với thông báo lỗi rõ ràng (Fast-fail); đồng thời các yêu cầu đặt lịch được ghi nhận vào hàng đợi ngoại tuyến (Outbox Queue) để đồng bộ lại khi kết nối phục hồi.
-- **Tactic được lựa chọn:** **Circuit Breaker (State: Closed, Open, Half-Open) + Bulkhead + Graceful Degradation.**
-- **Biện luận:** Tactic này cô lập hoàn toàn sự cố tại từng cơ sở chi nhánh (áp dụng Bulkhead pattern - ngăn tràn khoang thuyền). Sự cố tại phòng khám Huế chỉ khiến mạch của riêng phòng khám Huế bị ngắt (OPEN), tuyệt đối không ảnh hưởng đến tài nguyên xử lý của 11 phòng khám còn lại.
+Nhóm tham chiếu danh mục chiến thuật chuẩn trong *Software Architecture in Practice (4th Edition – Len Bass, Paul Clements, Rick Kazman)* để đối chiếu các phương án và chọn giải pháp tối ưu cho 4 ASR mức `(H, H)`.
 
-> **Tự kiểm tra Bước 7 (ASR-02): Tactic đã chọn ảnh hưởng tiêu cực tới QA nào khác?**
-> *Trả lời:* Tactic này đánh đổi thuộc tính **Data Consistency (Tính nhất quán tức thời)** để lấy **Availability**. Khi HIS Huế bị ngắt kết nối, lịch khám ghi nhận trên MediLink sẽ không được đồng bộ tức thời xuống máy chủ cục bộ của phòng khám Huế mà phải lưu tạm ở hàng đợi bất đồng bộ. Điều này chấp nhận trạng thái nhất quán muộn (Eventual Consistency) và cần quy trình đối soát tự động khi HIS Huế online trở lại.
+### 1.1. Thiết kế Chống Double-Booking cho `ASR-01` (MediLink Mục 4)
 
----
+**Yêu cầu mục tiêu:** 50 bệnh nhân cùng đặt 1 khung giờ của 1 bác sĩ → đúng 1 thành công (`201`), 49 nhận `409 Conflict`, `double-booking = 0.00%`, `p95 ≤ 500 ms`, chống gửi lặp khi rớt mạng (`Idempotency`).
 
-### 1.3. Tactics cho ASR-03: Ngăn chặn truy cập trái phép hồ sơ y tế (Security & Privacy)
+#### Bảng So sánh 4 Cơ chế Kiểm soát Đồng thời Bắt buộc
 
-- **Mục tiêu:** Lễ tân cơ sở Đà Nẵng không thể truy cập hồ sơ bệnh án của bệnh nhân cơ sở Huế (Trả về HTTP 403 Forbidden và ghi log kiểm toán 100%).
-- **Các Tactics ứng viên được cân nhắc:**
-  1. *Role-Based Access Control (RBAC đơn thuần):* Phân quyền theo vai trò (Bệnh nhân, Bác sĩ, Lễ tân, Quản trị viên).
-     - *Đánh giá:* Không đủ đáp ứng yêu cầu. Lễ tân Đà Nẵng và Lễ tân Huế đều cùng chung vai trò `RECEPTIONIST`. Nếu chỉ dùng RBAC, lễ tân Đà Nẵng vẫn có thể xem được dữ liệu bệnh nhân Huế.
-  2. *Attribute-Based Access Control (ABAC - Kiểm soát truy cập dựa trên thuộc tính ngữ cảnh):* Đánh giá động các thuộc tính: `Subject.facility_id`, `Resource.facility_id`, `Action`, `Environment.time`.
-     - *Đánh giá:* Rất mạnh mẽ và linh hoạt, cho phép định nghĩa chính sách: "Chỉ cho phép đọc khi `Subject.facility_id == Resource.facility_id` hoặc khi có sự ủy quyền rõ ràng của bệnh nhân".
-  3. *Append-Only Audit Logging với HMAC Cryptographic Hash Chain:* Mọi truy vấn đọc/ghi đều tạo ra một log entry có băm chuỗi bảo vệ toàn vẹn.
-- **Tactic được lựa chọn:** **Hybrid Access Control (RBAC kết hợp Contextual ABAC Policy Engine) + Authorize Actors + Tamper-evident Audit Logging.**
-- **Biện luận:** RBAC giúp quản lý phân quyền theo nhóm nghiệp vụ cơ bản, trong khi ABAC giải quyết ranh giới phân tách dữ liệu địa lý đa cơ sở (Multi-facility isolation). Lớp kiểm toán bất biến bảo đảm tính không thể chối bỏ (Non-repudiation) theo Nghị định 13/2023/NĐ-CP.
+| Cơ chế ứng viên | Thuộc nhóm Tactic (Bass et al.) | Ưu điểm | Nhược điểm & Kịch bản thất bại với 50 requests đồng thời |
+|:---|:---|:---|:---|
+| **1. Pessimistic Lock (`SELECT ... FOR UPDATE`)** | *Locking / Serialization* tại CSDL | Đảm bảo tuần tự hóa chặt chẽ trong phạm vi 1 CSDL quan hệ đơn. | Giữ kết nối và khóa dòng trong suốt giao dịch; nếu vô tình gọi HTTP sang HIS trong khi đang giữ khóa DB sẽ làm cạn kiệt Connection Pool ngay lập tức và tăng vọt độ trễ. |
+| **2. Optimistic Lock (`version` column)** | *Concurrency Control* không khóa khi đọc | Tốc độ đọc rất cao khi ít xung đột. | **Thất bại nặng khi tranh chấp 50 chọi 1:** cả 50 luồng đều chạy qua các bước kiểm tra rồi 49 luồng đụng lỗi lệch `version` ở bước cuối; nếu client tự retry sẽ tạo bão truy vấn (*Retry Storm*). |
+| **3. Chỉ dùng `UNIQUE(doctor_id, slot_time)` trên DB** | *Data Integrity Constraint* | Đơn giản, chốt chặn dữ liệu cuối cùng rất chắc chắn trên đĩa. | **Chưa đủ khi có nhiều instance, cache và HIS ngoài:** toàn bộ 50 requests dội thẳng vào DB; không ngăn được việc gọi trùng sang HIS trước khi commit; không xử lý được `Idempotency` khi cùng 1 khách bấm lặp. |
+| **4. Distributed Lock trên Redis (`SET NX PX` + Lua)** | *Introduce Concurrency Broker / Token Lock* | Chặn sớm 49 requests tranh chấp ngay trên RAM trong `< 5 ms`, bảo vệ hoàn toàn CSDL bên dưới. | **Rủi ro nếu đứng một mình:** Nếu tiến trình giữ khóa bị treo (*GC pause*) lâu hơn TTL 3 giây thì khóa tự mở cho người thứ hai vào, hoặc nếu Redis khởi động lại mất khóa tạm thời có thể lọt 2 luồng xuống DB. |
 
-> **Tự kiểm tra Bước 7 (ASR-03): Tactic đã chọn ảnh hưởng tiêu cực tới QA nào khác?**
-> *Trả lời:* Việc kiểm tra ABAC và tính toán mã băm HMAC cho Audit Log tại mỗi request sẽ làm tăng nhẹ **Latency / Performance** (khoảng 5-10ms) và làm tăng dung lượng lưu trữ (**Storage Cost**). Nhóm khắc phục bằng cách sử dụng bất đồng bộ (Asynchronous worker) để ghi nhận Audit Log vào hàng đợi và tính toán chuỗi băm mà không làm nghẽn luồng xử lý chính của người dùng.
+#### Giải pháp Kiến trúc Nhóm Lựa chọn (`ADR-003` – Phòng thủ Đa tầng 3 Lớp)
+Thay vì dựa đơn độc vào một cơ chế, nhóm kết hợp **3 lớp bổ trợ chặt chẽ** trong `src/core/booking/`:
+1. **Lớp 1 – `Idempotency Key` (`idempotencyManager.js`):** Kiểm tra header `X-Idempotency-Key`; nếu khách hàng gửi lặp lại cùng một giao dịch do mạng 4G chập chờn, hệ thống trả về ngay kết quả đã lưu (`200 OK`, `idempotent_replay: true`).
+2. **Lớp 2 – `Redis Distributed Lock + Monotonic Fencing Token` (`lockManager.js`):** Gọi lệnh nguyên tử `INCR medilink:fencing_seq` và `SET lock:slot:{doctor_id}:{slot_time} {owner}:{fencingToken} NX PX 3000`. 49 yêu cầu đến sau nhận `NULL` từ Redis và trả `HTTP 409 Conflict` tức thì. **Nguyên tắc vàng:** Khóa được giải phóng bằng **Lua Script nguyên tử** ngay sau khi bước ghi giữ chỗ xuống CSDL hoàn tất (chỉ giữ khóa `~2–5 ms`, **không bao giờ giữ khóa trong lúc chờ gọi HTTP sang HIS ngoài**!).
+3. **Lớp 3 – `RDBMS Atomic Transaction + UNIQUE(active_slot_key)` (`database.js`):** Giao dịch `BEGIN IMMEDIATE` kiểm tra `slots.status == 'AVAILABLE'` và chèn vào `bookings` với cột khóa duy nhất `active_slot_key = doctor_id || '|' || slot_time` (khi hủy lịch thì gán `NULL` để tái sử dụng được slot). Đây là chốt chặn thép cuối cùng ngay cả khi Redis gặp sự cố.
+
+> **Tự kiểm tra Bước 7 (`ASR-01`) – Tactic đã chọn ảnh hưởng tiêu cực tới QA nào khác?**
+> - Làm tăng nhẹ **độ phức tạp vận hành (Maintainability/Deployability)** do phải duy trì thêm cụm Redis bên cạnh CSDL chính, và tăng khoảng `1–3 ms` độ trễ cho trường hợp không có tranh chấp. Tuy nhiên đánh đổi này hoàn toàn xứng đáng để đổi lấy `0.00%` double-booking và bảo vệ CSDL dưới đỉnh tải 50x.
 
 ---
 
-### 1.4. Tactics cho ASR-04: Tích hợp HIS mới không sửa Core (Interoperability & Modifiability)
+### 1.2. Thiết kế Lớp Tích hợp HIS & Cô lập Sự cố cho `ASR-02` và `ASR-04` (MediLink Mục 3)
 
-- **Mục tiêu:** Tích hợp phần mềm HIS thứ 4 trong ≤ 2 tuần công (≤ 10 ngày làm việc) mà không cần chỉnh sửa bất kỳ dòng code nào trong Core Domain.
-- **Các Tactics ứng viên được cân nhắc:**
-  1. *Direct Integration (Gọi trực tiếp từng HIS trong Core Service):*
-     - *Đánh giá:* Vi phạm nghiêm trọng nguyên tắc Low Coupling và Single Responsibility. Mỗi lần thêm HIS mới phải sửa đổi mã nguồn Core, kiểm thử lại toàn bộ hệ thống (Regression risk cao).
-  2. *Enterprise Service Bus (ESB):*
-     - *Đánh giá:* Quá cồng kềnh, chi phí bản quyền và vận hành hạ tầng rất lớn, không phù hợp với quy mô chuỗi 12 phòng khám.
-  3. *Anti-Corruption Layer (ACL) kết hợp Adapter Pattern & Canonical Data Model (HL7 FHIR):* Định nghĩa một giao diện chuẩn trừu tượng (`IHisAdapter`) và mô hình dữ liệu chung (Canonical Model) chuẩn hóa theo chuẩn y tế HL7 FHIR (`Appointment`, `Patient`, `Observation`). Mỗi HIS cụ thể sẽ có một Adapter riêng chuyển đổi dữ liệu hai chiều.
-- **Tactic được lựa chọn:** **Anti-Corruption Layer (ACL) + Adapter Pattern + Canonical Data Model (HL7 FHIR R4).**
-- **Biện luận:** Tactic này tách biệt hoàn toàn miền nghiệp vụ cốt lõi (Core Domain) khỏi sự hỗn loạn và biến dị của các hệ thống ngoài (Domain-Driven Design). Khi có HIS mới, lập trình viên chỉ cần tạo 1 Adapter mới kế thừa `IHisAdapter` và đăng ký vào Factory, Core không hề bị tác động.
+**Yêu cầu mục tiêu:** Liên thông 3 nhóm HIS không đồng nhất (Đà Nẵng REST/JSON, Huế SOAP/XML, Quảng Nam Custom RPC), thêm HIS thứ 4 trong `≤ 2 tuần công` với `0 dòng` sửa Core (`ASR-04`), và khi HIS Huế sập 2 giờ thì 11 cơ sở khác vẫn đặt lịch `100%` bình thường (`ASR-02`).
 
-> **Tự kiểm tra Bước 7 (ASR-04): Tactic đã chọn ảnh hưởng tiêu cực tới QA nào khác?**
-> *Trả lời:* Việc chuyển đổi dữ liệu qua lại giữa định dạng riêng của từng HIS sang Canonical Model (HL7 FHIR) sẽ làm tăng **CPU overhead** và làm tăng nhẹ độ trễ tuần tự hóa/giải tuần tự hóa (Serialization/Deserialization Latency). Tuy nhiên, độ trễ này chỉ chiếm dưới 3ms, hoàn toàn đánh đổi xứng đáng để có được khả năng mở rộng và bảo trì vượt trội.
+#### Bảng So sánh 3 Chiến lược Thiết kế Lớp Tích hợp Bắt buộc
+
+| Chiến lược tích hợp | Mức tách biệt (*Decoupling*) | Đánh giá khả năng mở rộng HIS thứ 4 & Bảo vệ Core Domain |
+|:---|:---:|:---|
+| **1. Gọi trực tiếp từng HIS từ Core (*Direct Point-to-Point*)** | Rất thấp | `BookingService` chứa đầy `if (his == 'HUE') buildSoapXml() else if (his == 'QN') ...`. Khi thêm HIS thứ 4 hoặc sửa 1 thẻ XML ở Huế phải sửa và test lại toàn bộ Core. **Loại bỏ.** |
+| **2. *Adapter per HIS* (Ánh xạ thẳng vào Model Nội bộ, không có Canonical Model)** | Trung bình | Đã tách giao thức HTTP/SOAP ra các class Adapter, nhưng mỗi Adapter lại phụ thuộc chặt vào cấu trúc bảng nội bộ của MediLink và tự xử lý quy đổi mã bệnh nhân một kiểu riêng. Khi MediLink nâng cấp model nội bộ hoặc cần trao đổi chuẩn y tế quốc gia thì mọi Adapter đều phải sửa. **Không tối ưu.** |
+| **3. *Anti-Corruption Layer (ACL) + Canonical Data Model chuẩn HL7 FHIR R4 (`Patient`, `Appointment`)* *(Được chọn)*** | **Rất cao** | Tách biệt 2 chiều hoàn chỉnh: (1) Ánh xạ định danh xuyên chuỗi `MPI` ↔ mã bệnh nhân cục bộ (`patient_his_mappings`); (2) Chuẩn hóa sang tài nguyên y tế quốc tế **HL7 FHIR R4 `Patient` & `Appointment`** (`canonicalModel.js`); (3) Mỗi HIS chỉ cần 1 Adapter mỏng dịch từ FHIR sang giao thức đích, bọc ngoài bởi `CircuitBreaker` riêng từng cơ sở. **Tối ưu nhất.** |
+
+#### Bảng Quyết định Chế độ Đồng bộ (*Synchronous*) hay Bất đồng bộ (*Asynchronous*) cho Từng Luồng Nghiệp vụ
+
+| STT | Luồng giao tiếp tích hợp | Chế độ lựa chọn | Giao thức & Cơ chế kỹ thuật | Lý do kiến trúc đằng sau quyết định |
+|:---:|--------------------------|:---------------:|-----------------------------|-------------------------------------|
+| 1 | **Tra cứu danh sách Bác sĩ & Khung giờ trống** (`Client → MediLink`) | **Đồng bộ trên Cache/DB nội bộ** *(Không gọi HIS trực tiếp)* | `HTTP GET` → `SlotReadCache` (TTL 15s, xóa đệm khi ghi) → `SQLite` | Nếu mỗi lượt bệnh nhân mở màn hình chọn lịch đều gọi sang 3 HIS ngoài thì độ trễ tăng gấp 10 lần và khi HIS Huế sập khách không xem được cả lịch trống. |
+| 2 | **Đặt lịch khám mới** (`MediLink → HIS Cơ sở`) | **Lai thông minh (*Hybrid: Sync có Timeout ngắn + Fallback sang Async Outbox*)** | Khi mạch `CLOSED`: gọi đồng bộ `Timeout = 1.5s` để lấy mã phiếu HIS ngay. Khi lỗi/timeout hoặc mạch `OPEN`: ghi **bất đồng bộ** vào `outbox_events` (`ADR-007`). | Khi HIS khỏe (99% thời gian), bệnh nhân nhận được ngay mã phiếu tiếp đón của phòng khám; khi HIS Huế sập 2 giờ, hệ thống tự động chuyển sang bất đồng bộ để không treo luồng và không mất lịch! |
+| 3 | **Đồng bộ bù lịch hẹn sau sự cố** (`Worker → HIS Cơ sở`) | **Bất đồng bộ có điều tiết nhịp độ** (*Asynchronous Rate-Controlled*) | `OutboxSyncWorker` đọc lô `5 bản ghi` + chèn `Jitter` ngẫu nhiên + `IdempotencyToken` | Ngăn chặn triệt để hiện tượng *Thundering Herd* làm máy chủ HIS di sản tại Huế vừa khởi động lại đã bị dội sập tiếp. |
+| 4 | **Đẩy kết quả xét nghiệm PDF/ảnh & tóm tắt khám từ HIS lên MediLink** | **Bất đồng bộ** (*Asynchronous*) | Webhook / Batch Upload nền → mã hóa `AES-256-GCM` lưu vào Object Storage (`ADR-006`) | Tệp xét nghiệm nặng 1–15 MB và phát sinh sau giờ khám; xử lý bất đồng bộ giúp không làm nghẽn băng thông luồng đặt lịch trực tuyến. |
+| 5 | **Gửi thông báo xác nhận QR & nhắc lịch 24h/2h (SMS, Zalo ZNS, Email)** | **Bất đồng bộ hoàn toàn** (*Asynchronous Queue*) | Bảng hàng đợi `notification_jobs` + `NotificationQueueWorker` retry hàm mũ 3 lần (`ADR-005`) | Độ trễ và sự cố của nhà mạng viễn thông bên ngoài phải được cách ly 100% khỏi giao dịch đặt lịch (`QAS-08`). |
+
+> **Tự kiểm tra Bước 7 (`ASR-02` & `ASR-04`) – Tactic đã chọn ảnh hưởng tiêu cực tới QA nào khác?**
+> - **Circuit Breaker + Outbox (`ASR-02`):** Đánh đổi **Tính nhất quán tức thời (*Immediate Consistency*)** lấy **Tính sẵn sàng (*Availability*)** — trong thời gian HIS Huế đứt mạng, phần mềm tại quầy Huế chưa thấy ngay lịch mới đặt trên mây cho tới khi mạng có lại và Outbox đồng bộ xong.
+> - **ACL + HL7 FHIR Canonical Model (`ASR-04`):** Tăng nhẹ **chi phí chuyển đổi dữ liệu (*Serialization Overhead*)** khoảng `1–2 ms` CPU để tạo cấu trúc JSON FHIR R4 trung gian, nhưng hoàn toàn không đáng kể so với lợi ích bảo trì dài hạn.
 
 ---
 
-## 2. Lựa chọn Phong cách Kiến trúc Tổng thể (Architectural Style Selection)
+### 1.3. Thiết kế Bảo mật Đa lớp cho `ASR-03` & `QAS-05` (MediLink Mục 5)
 
-Để đưa ra quyết định kiến trúc khách quan, nhóm tiến hành lập bảng so sánh và phân tích đánh giá đa tiêu chí giữa 3 phong cách kiến trúc tiềm năng:
-1. **Phương án A: Microservices Architecture thuần túy** (Tách riêng Booking Service, EHR Service, Patient Service, Notification Service, Integration Service thành các tiến trình độc lập với cơ sở dữ liệu riêng biệt).
-2. **Phương án B: Monolith truyền thống dạng khối dính liền** (Single deployable unit, shared database, mã nguồn gom chung).
-3. **Phương án C: Modular Monolith kết hợp Hexagonal / Ports-and-Adapters Architecture** (Kiến trúc đơn khối phân module nghiêm ngặt, ranh giới domain rõ ràng, lớp tích hợp ACL dạng Adapter độc lập, sẵn sàng tách tiến trình khi cần).
+Nhóm áp dụng tổ hợp **5 Tactics bảo mật** từ catalog của Bass et al. (`Authenticate Actors`, `Authorize Actors`, `Limit Access / Data Minimization`, `Encrypt Data`, `Maintain Audit Trail` + `Detect Intrusion/Tampering`):
+1. **Xác thực `JWT HS256` chuẩn RFC 7519 (`jwtService.js`):** Kiểm tra chữ ký số bằng `crypto.timingSafeEqual` và thời hạn `exp`.
+2. **Phân quyền `RBAC + Contextual ABAC + Explicit Consent` (`abacMiddleware.js`):**
+   - Kiểm tra vai trò (`PATIENT`, `RECEPTIONIST`, `DOCTOR`, `DIRECTOR`, `ADMIN`).
+   - Đối với `RECEPTIONIST`: bắt buộc đối chiếu `user.facility_id === record.facility_id` lấy trực tiếp từ bản ghi trong CSDL (chặn đứng `403` nếu khác cơ sở); ngay cả khi đúng cơ sở, chỉ cấp phạm vi xem `ADMIN_SUMMARY_ONLY` (ẩn toàn bộ chẩn đoán và đơn thuốc).
+   - Đối với `DOCTOR` khác cơ sở: bắt buộc kiểm tra bệnh nhân đã cấp quyền trong `patient_consents` hay chưa.
+3. **Mã hóa cấp trường `AES-256-GCM` (`encryptionService.js`):** Mã hóa toàn bộ các cột nhạy cảm (`diagnosis_enc`, `clinical_notes_enc`, `prescription_enc`, `lab_summary_enc`) với IV 96-bit ngẫu nhiên và khóa tách biệt khỏi CSDL.
+4. **Kho Object Storage mã hóa + Pre-signed URL 120s (`labStorageService.js` – `ADR-006`):** Bảo vệ tệp PDF kết quả xét nghiệm.
+5. **Audit Log chỉ ghi thêm (*Append-only*) kép (`auditService.js`, `auditVerifier.js`):** Cài đặt **SQLite Trigger chặn `UPDATE`/`DELETE`** ở tầng CSDL kết hợp **Chuỗi băm mật mã liên hoàn `HMAC-SHA256`** từ khối khởi nguyên (`GENESIS_HASH`) để phát hiện cả hành vi can thiệp của Root DBA.
 
-### Bảng so sánh và Đánh giá theo ASR và Bối cảnh dự án
+---
 
-| Tiêu chí / ASR | Trọng số | Monolith truyền thống | Microservices thuần túy | Modular Monolith + Hexagonal (Lựa chọn) |
+## 2. So sánh & Lựa chọn Phong cách Kiến trúc Tổng thể (Bước 8 & `ADR-001`)
+
+| Tiêu chí đánh giá (Truy vết ASR & Ràng buộc) | Trọng số | PA1: Layered Monolith truyền thống | PA2: Microservices phân tán (tách cả từng HIS) | PA3: Modular Monolith + Hexagonal + Worker tách rời *(Chọn)* |
 |:---|:---:|:---:|:---:|:---:|
-| **ASR-01: Consistency & Concurrency** (Chống double-booking) | 25% | **4/5** (ACID DB đơn giản, dễ lock nội bộ) | **2/5** (Giao dịch phân tán 2PC/Saga rất phức tạp, rủi ro race condition) | **5/5** (Xử lý tập trung qua Redis Lock + DB Unique Constraint, nhất quán mạnh) |
-| **ASR-02: Availability & Fault Tolerance** (Cách ly HIS Huế) | 25% | **2/5** (Một module treo có thể làm sập cả tiến trình) | **5/5** (Cách ly hoàn toàn tiến trình độc lập) | **4.5/5** (Áp dụng Circuit Breaker, Worker Pool riêng cho Adapter, cách ly lỗi tuyệt đối) |
-| **ASR-03: Security & Data Privacy** (RBAC/ABAC, Audit Log) | 20% | **3/5** (Dễ bị bypass logic, khó phân định ranh giới) | **3.5/5** (Quản lý phân tán token, network segmentation phức tạp) | **4.5/5** (Middleware tập trung, ranh giới rõ ràng, audit chain bảo mật cao) |
-| **ASR-04: Modifiability & Interoperability** (Thêm HIS mới) | 15% | **2/5** (Mã nguồn dễ bị dính chặt, vi phạm OCP) | **4.5/5** (Thêm 1 microservice mới cho HIS mới) | **5/5** (Thêm Adapter class mới tuân thủ interface, zero touch Core) |
-| **Chi phí vận hành & Độ phức tạp triển khai (15 tuần, nhóm 4 người)** | 15% | **5/5** (Rất dễ dựng, không tốn hạ tầng) | **1.5/5** (Quá phức tạp: Service Mesh, Distributed Tracing, K8s, DevOps quá tải) | **4.5/5** (Triển khai 1 container Docker compose gọn nhẹ, cấu trúc mã nguồn rành mạch) |
-| **TỔNG ĐIỂM CÓ TRỌNG SỐ** | **100%** | **3.10 / 5.0** | **3.05 / 5.0** | **4.65 / 5.0 (VƯỢT TRỘI)** |
+| **`ASR-01` – Chống Double-Booking & Nhất quán dữ liệu** | 25% | 3.5 / 5 | 2.5 / 5 *(Phức tạp giao dịch phân tán giữa các service)* | **5.0 / 5** *(Khóa Redis + Giao dịch ACID nội bộ siêu nhanh)* |
+| **`ASR-02` – Cô lập lỗi HIS Huế & Xử lý nền bền vững** | 25% | 2.0 / 5 *(Chung luồng dễ treo cả khối)* | **5.0 / 5** *(Cách ly tiến trình hoàn toàn)* | **4.5 / 5** *(Circuit Breaker theo cơ sở + Container `medilink-worker` riêng)* |
+| **`ASR-03` – Bảo mật ABAC, Consent & Audit bất biến** | 20% | 3.0 / 5 *(Dễ gọi tắt qua tầng Repository)* | 3.5 / 5 *(Phải đồng bộ chính sách/token qua nhiều trạm)* | **4.8 / 5** *(Cổng kiểm soát ABAC & Mã hóa tập trung, nhất quán 100%)* |
+| **`ASR-04` – Tích hợp thêm HIS thứ 4 ≤ 2 tuần công** | 15% | 2.0 / 5 *(Dính chặt giao thức ngoài vào Service)* | 4.5 / 5 *(Viết thêm 1 connector service mới)* | **5.0 / 5** *(Cắm thêm 1 class Adapter qua Port `BaseHisAdapter`, sửa Core = 0)* |
+| **`C-07` – Tính khả thi cho nhóm 4 sinh viên trong 15 tuần** | 15% | **5.0 / 5** | 1.5 / 5 *(Quá tải DevOps, mạng, nhiều DB, tốn RAM)* | **4.8 / 5** *(6 containers nhẹ < 250MB RAM, cấu trúc code cực kỳ rõ ràng)* |
+| **ĐIỂM TỔNG HỢP CÓ TRỌNG SỐ** | **100%** | **2.98 / 5.0** | **3.38 / 5.0** | **4.81 / 5.0 (LỰA CHỌN TỐI ƯU)** |
 
-> **Quyết định Phong cách Kiến trúc:** Nhóm quyết định lựa chọn **Modular Monolith với kiến trúc Hexagonal (Ports-and-Adapters)**. Lựa chọn này kết hợp được ưu điểm lớn nhất của Monolith (tính nhất quán mạnh, độ trễ giao tiếp thấp, dễ kiểm thử và triển khai bằng 1 lệnh docker compose) với ưu điểm lớn nhất của Microservices (tính module hóa, ranh giới domain rõ ràng, khả năng mở rộng Adapter linh hoạt mà không chạm Core).
+### Góc nhìn Phản biện (*Devil's Advocate*): Khi nào lựa chọn Modular Monolith này trở nên bất cập?
+- **Phản biện:** *"Nếu chuỗi MediLink sáp nhập lên 100 bệnh viện toàn quốc với 50.000 lượt khám/giờ và 20 đội kỹ sư cùng code chung 1 repo `medilink-core`, việc deploy chung một khối có gây nghẽn quy trình phát hành và nghẽn tải ghi CSDL đơn không?"*
+- **Trả lời trung thực của nhóm:** Có! Nhưng ở quy mô hiện tại (12 phòng khám, ~2.000 lượt/ngày, nhóm 4 người trong 15 tuần), xây dựng 10 Microservices ngay từ đầu là lỗi thiết kế *Premature Optimization* kinh điển. Nhờ nhóm đã phân chia ranh giới module khép kín (`auth`, `booking`, `ehr`, `acl`, `audit`) và chuẩn hóa giao diện `BaseHisAdapter` theo Hexagonal Architecture, khi quy mô tăng gấp 10–20 lần trong tương lai, nhóm có thể tách riêng module `acl` (HIS Integration Service) và `booking` ra thành các Microservices độc lập chỉ trong vài ngày mà không phải viết lại logic nghiệp vụ.
 
 ---
 
-## 3. Các Khung nhìn Kiến trúc (C4 Architecture Views & Deployment View)
+## 3. Các Khung nhìn Kiến trúc (Architecture Views – Bước 9)
 
-### 3.1. C4 Level 1: System Context View (Bối cảnh hệ thống)
+Toàn bộ 6 sơ đồ dưới đây được duy trì đồng bộ dạng mã nguồn C4-PlantUML trong thư mục `diagrams/` và biểu diễn trực quan bằng Mermaid dưới đây. **Tên mọi thành phần, cổng mạng và giao thức khớp 100% giữa các View và khớp 1:1 với mã nguồn `src/` cùng `docker-compose.yml`.**
 
-Sơ đồ ngữ cảnh định nghĩa ranh giới hệ thống MediLink, các tác nhân bên ngoài và các hệ thống liên kết.
+### 3.1. C4 Level 1 – System Context View (Kèm Trust Boundaries)
+*(Mã nguồn gốc PlantUML: [`diagrams/c4-context.puml`](../diagrams/c4-context.puml))*
 
 ```mermaid
-graph TD
-    classDef person fill:#08427b,stroke:#052d56,color:#fff;
-    classDef system fill:#1168bd,stroke:#0b4884,color:#fff;
-    classDef extSystem fill:#999999,stroke:#666666,color:#fff;
-    classDef boundary fill:none,stroke:#444,stroke-width:2px,stroke-dasharray: 5 5;
-
-    subgraph TrustBoundary[" Vùng ranh giới Tin cậy (Trust Boundary - MediLink Core) "]
-        MediLink["Hệ thống Nền tảng MediLink<br/>[Software System]<br/>Quản lý đặt lịch tập trung, hồ sơ sức khỏe điện tử (EHR), bảo mật và điều phối tích hợp đa cơ sở"]:::system
+flowchart TB
+    subgraph TB1["Trust Boundary 1: Untrusted Public Zone (Internet / 4G / Wi-Fi)"]
+        Patient["Bệnh nhân (Patient)<br/>[Person]<br/>Đặt/hủy lịch, nộp cọc, cấp Consent, xem EHR"]
+        Doctor["Bác sĩ (Doctor)<br/>[Person]<br/>Quản lý ca trực, xem bệnh sử, kê đơn"]
+        Receptionist["Lễ tân (Receptionist)<br/>[Person]<br/>Check-in tại quầy đúng cơ sở phụ trách"]
+        Director["Ban Giám đốc (Executive)<br/>[Person]<br/>Xem Dashboard thống kê ẩn danh"]
     end
 
-    Patient["Bệnh nhân (Patient)<br/>[Person]<br/>Đặt lịch, nhận nhắc hẹn, xem kết quả khám & bệnh án"]:::person
-    Doctor["Bác sĩ (Doctor)<br/>[Person]<br/>Quản lý ca trực, xem bệnh sử, chẩn đoán và kê đơn"]:::person
-    Receptionist["Lễ tân / Thu ngân (Receptionist)<br/>[Person]<br/>Tiếp đón tại quầy, check-in theo cơ sở được phân quyền"]:::person
-    Director["Ban Giám đốc (Executive)<br/>[Person]<br/>Xem dashboard thống kê công suất, doanh thu chuỗi"]:::person
+    subgraph TB2["Trust Boundary 2: Trusted MediLink Platform (Tuân thủ NĐ 13/2023/NĐ-CP)"]
+        MediLink["MediLink Central Platform<br/>[Software System]<br/>Đặt lịch chống trùng, EHR mã hóa AES-256-GCM,<br/>RBAC+ABAC+Consent, Audit HMAC & ACL chuẩn FHIR R4"]
+    end
 
-    HIS_A["Mock HIS Đà Nẵng<br/>[External System]<br/>Hệ thống HIS REST/JSON"]:::extSystem
-    HIS_B["Mock HIS Huế<br/>[External System]<br/>Hệ thống HIS di sản SOAP/XML"]:::extSystem
-    HIS_C["Mock HIS Quảng Nam<br/>[External System]<br/>Hệ thống HIS Custom REST"]:::extSystem
-    PaymentGateway["Cổng thanh toán điện tử (Payment Gateway)<br/>[External System]<br/>Xác thực giao dịch đặt cọc (VNPay/MoMo)"]:::extSystem
-    NotificationGateways["Cổng SMS / Zalo ZNS / Email Gateway<br/>[External System]<br/>Gửi thông báo nhắc lịch tự động"]:::extSystem
+    subgraph TB3["Trust Boundary 3: External Clinic Legacy HIS Zone (12 Phòng khám)"]
+        HIS_DN["HIS Cụm Đà Nẵng (5 cơ sở)<br/>[External System - Port 8001]<br/>REST/JSON - Mã BN: UUID"]
+        HIS_HUE["HIS Cụm Huế (4 cơ sở)<br/>[External System - Port 8002]<br/>SOAP 1.1 / XML - Mã BN: HUE-BN-xxx"]
+        HIS_QN["HIS Cụm Quảng Nam (3 cơ sở)<br/>[External System - Port 8003]<br/>Custom RPC/JSON - Mã BN: Số nguyên"]
+    end
 
-    Patient -->|"1. Tìm kiếm bác sĩ, đặt lịch khám, thanh toán cọc [HTTPS]"| MediLink
-    Doctor -->|"2. Xem lịch làm việc, cập nhật chẩn đoán & đơn thuốc [HTTPS]"| MediLink
-    Receptionist -->|"3. Check-in bệnh nhân theo cơ sở chi nhánh [HTTPS/RBAC+ABAC]"| MediLink
-    Director -->|"4. Xem dashboard vận hành tổng hợp [HTTPS]"| MediLink
+    subgraph TB4["Trust Boundary 4: Third-Party Service Providers"]
+        PayGW["Cổng Thanh toán Đặt cọc<br/>[External System]"]
+        NotifGW["Cổng SMS / Zalo ZNS / Email<br/>[External System]"]
+    end
 
-    MediLink -->|"5. Đồng bộ lịch khám hai chiều [HTTP/REST]"| HIS_A
-    MediLink -->|"6. Đồng bộ lịch khám hai chiều qua Adapter [SOAP/XML]"| HIS_B
-    MediLink -->|"7. Đồng bộ lịch khám hai chiều [HTTP/REST]"| HIS_C
-    MediLink -->|"8. Gửi yêu cầu trừ tiền cọc [HTTPS API]"| PaymentGateway
-    MediLink -->|"9. Gửi tin nhắn thông báo nhắc hẹn [HTTPS API]"| NotificationGateways
+    Patient -->|"HTTPS/TLS 1.3 + JWT"| MediLink
+    Doctor -->|"HTTPS/TLS 1.3 + JWT"| MediLink
+    Receptionist -->|"HTTPS/TLS 1.3 + JWT"| MediLink
+    Director -->|"HTTPS/TLS 1.3 + JWT"| MediLink
+
+    MediLink -->|"HTTP REST/JSON + Idempotency-Key"| HIS_DN
+    MediLink -->|"HTTP SOAP 1.1 / XML"| HIS_HUE
+    MediLink -->|"HTTP Custom RPC/JSON"| HIS_QN
+    MediLink -->|"HTTPS Webhook/REST"| PayGW
+    MediLink -.->|"HTTPS REST (Async Worker)"| NotifGW
 ```
 
-**Legend (Chú giải C4 Level 1):**
-- **Person (Màu xanh đậm):** Người dùng hệ thống có danh tính đã xác thực.
-- **System (Màu xanh dương sáng):** Nền tảng MediLink nằm trong ranh giới tin cậy (Trust Boundary).
-- **External System (Màu xám):** Hệ thống độc lập của bên thứ ba, nằm ngoài quyền kiểm soát trực tiếp của MediLink. Mọi kết nối đi ra ngoài đều phải qua lớp bảo vệ.
+- **Legend (Chú giải):** Nét liền (`-->`) biểu diễn luồng gọi trực tuyến có kiểm soát thời gian chờ; nét đứt (`-.->`) biểu diễn luồng xử lý nền bất đồng bộ; khung chữ nhật bao ngoài thể hiện **4 Ranh giới Tin cậy (*Trust Boundaries*)** nơi mọi gói tin đi qua đều phải xác thực/kiểm tra hợp lệ.
 
 ---
 
-### 3.2. C4 Level 2: Container View (Mức tiến trình và Lưu trữ)
-
-Sơ đồ Container mô tả các khối phần mềm có thể triển khai (deployable units) cấu thành nên nền tảng MediLink.
-
-```mermaid
-graph TD
-    classDef client fill:#3b82f6,stroke:#1d4ed8,color:#fff;
-    classDef gateway fill:#8b5cf6,stroke:#6d28d9,color:#fff;
-    classDef core fill:#10b981,stroke:#047857,color:#fff;
-    classDef store fill:#f59e0b,stroke:#b45309,color:#fff;
-    classDef ext fill:#64748b,stroke:#334155,color:#fff;
-
-    WebClient["Single-Page Web Application<br/>[React / Vite]<br/>Giao diện người dùng cho Bệnh nhân, Bác sĩ, Lễ tân và Quản trị viên"]:::client
-    MobileApp["Mobile App (Bệnh nhân)<br/>[Flutter / React Native]<br/>Ứng dụng đặt lịch và xem hồ sơ trên iOS / Android"]:::client
-
-    subgraph CorePlatform[" MediLink Core Platform (Docker Container) "]
-        APIGateway["API Gateway & Reverse Proxy<br/>[Nginx / Express Gateway]<br/>Routing, Rate Limiting (Token Bucket), SSL Termination"]:::gateway
-        AuthModule["Authentication & Security Module<br/>[Node.js Module]<br/>JWT Validation, RBAC & Facility-scoped ABAC Middleware"]:::core
-        BookingModule["Booking & Scheduling Module<br/>[Node.js Module]<br/>Xử lý đặt/hủy lịch, điều phối Distributed Lock, Idempotency"]:::core
-        EHRModule["EHR & Health Record Module<br/>[Node.js Module]<br/>Quản lý bệnh án, mã hóa dữ liệu nhạy cảm AES-256"]:::core
-        ACLModule["Anti-Corruption Layer (HIS Integration Engine)<br/>[Node.js Module]<br/>Chuyển đổi dữ liệu sang HL7 FHIR Canonical Model & Quản lý Adapters"]:::core
-        AuditService["Tamper-Evident Audit Service<br/>[Node.js Module]<br/>Ghi nhận nhật ký kiểm toán Append-only có chuỗi băm HMAC"]:::core
-        NotificationWorker["Notification Background Worker<br/>[Node.js Process]<br/>Xử lý quét lịch và phát tán tin nhắn SMS/Zalo/Email từ hàng đợi"]:::core
-    end
-
-    RedisStore["In-Memory Cache & Lock Store<br/>[Redis 7.x]<br/>Distributed Locks (Redlock), Idempotency Keys, Circuit Breaker State, BullMQ"]:::store
-    MainDatabase["Primary Relational Database<br/>[PostgreSQL / SQLite]<br/>Lưu trữ Lịch khám, Thông tin Bệnh nhân, Tài khoản, Phân quyền"]:::store
-    AuditDatabase["Audit Log Store (Append-Only)<br/>[Encrypted PostgreSQL Table / WORM Log]<br/>Lưu trữ vết kiểm toán liên hoàn có mã băm HMAC"]:::store
-
-    HIS_A["Mock HIS Đà Nẵng [REST/JSON]"]:::ext
-    HIS_B["Mock HIS Huế [SOAP/XML]"]:::ext
-    HIS_C["Mock HIS Quảng Nam [Custom REST]"]:::ext
-
-    WebClient -->|"HTTPS / REST"| APIGateway
-    MobileApp -->|"HTTPS / REST"| APIGateway
-
-    APIGateway --> AuthModule
-    AuthModule --> BookingModule
-    AuthModule --> EHRModule
-
-    BookingModule -->|"Acquire / Release Lock (TTL 3s)"| RedisStore
-    BookingModule -->|"Write Booking (Unique Constraint)"| MainDatabase
-    BookingModule -->|"Invoke Dispatcher"| ACLModule
-
-    EHRModule -->|"Read/Write Sensitive Record"| MainDatabase
-    AuthModule -.->|"Log Event (Asynchronous)"| AuditService
-    EHRModule -.->|"Log EHR Access"| AuditService
-    AuditService -->|"Append Entry with HMAC Hash"| AuditDatabase
-
-    ACLModule -->|"Circuit Breaker Checked"| RedisStore
-    ACLModule -->|"REST Calls"| HIS_A
-    ACLModule -->|"SOAP/XML Calls"| HIS_B
-    ACLModule -->|"Custom Calls"| HIS_C
-
-    BookingModule -.->|"Push Reminder Task"| RedisStore
-    RedisStore -.->|"Consume Job"| NotificationWorker
-```
-
-**Legend (Chú giải C4 Level 2):**
-- **Client Tier:** Web/Mobile Apps giao tiếp qua kênh an toàn HTTPS.
-- **Core Platform:** Chạy trong container Docker chuẩn hóa, ranh giới giữa các module được phân định nghiêm ngặt qua Dependency Injection.
-- **Data Tier:** Phân tách rõ ràng giữa In-memory Cache/Lock (Redis), Database Nghiệp vụ (PostgreSQL) và Bảng Audit Log Append-Only được mã hóa.
-
----
-
-### 3.3. C4 Level 3: Component View (Thành phần Lớp Tích hợp - Anti-Corruption Layer)
-
-Lớp Anti-Corruption Layer (ACL) là "trái tim" giải quyết tính không đồng nhất của chuỗi phòng khám.
+### 3.2. C4 Level 2 – Container View (Kèm Trust Boundaries, Khớp 1:1 với `docker-compose.yml`)
+*(Mã nguồn gốc PlantUML: [`diagrams/c4-container.puml`](../diagrams/c4-container.puml))*
 
 ```mermaid
-graph TD
-    classDef coreComp fill:#10b981,stroke:#047857,color:#fff;
-    classDef aclComp fill:#0284c7,stroke:#0369a1,color:#fff;
-    classDef extHis fill:#64748b,stroke:#334155,color:#fff;
+flowchart TB
+    Client["Web / Mobile Client<br/>[HTTPS Client]"]
 
-    BookingService["BookingService<br/>(Core Domain Logic)"]:::coreComp
-
-    subgraph ACL[" Anti-Corruption Layer (ACL) & HIS Integration Engine "]
-        HisDispatcher["HisIntegrationDispatcher<br/>[Component]<br/>Điều phối yêu cầu đến đúng Adapter theo facility_id"]:::aclComp
-        CircuitBreakerManager["CircuitBreakerManager<br/>[Component]<br/>Quản lý trạng thái Closed/Open/Half-Open cho từng cơ sở"]:::aclComp
-        CanonicalModelMapper["CanonicalModelMapper (HL7 FHIR)<br/>[Component]<br/>Chuyển đổi dữ liệu nội bộ <-> HL7 FHIR Resource (Appointment/Patient)"]:::aclComp
-
-        IHisAdapter["<<Interface>><br/>IHisIntegrationAdapter<br/>+syncAppointment(fhirAppt)<br/>+cancelAppointment(apptId)<br/>+getDoctorAvailability(doctorId, date)"]:::aclComp
-
-        DaNangAdapter["DaNangHisJsonAdapter<br/>[Adapter Implementation]<br/>Mapping FHIR <-> DaNang REST JSON payload"]:::aclComp
-        HueAdapter["HueHisXmlAdapter<br/>[Adapter Implementation]<br/>Mapping FHIR <-> Hue SOAP/XML envelope"]:::aclComp
-        QuangNamAdapter["QuangNamHisAdapter<br/>[Adapter Implementation]<br/>Mapping FHIR <-> Quang Nam Custom JSON payload"]:::aclComp
-    end
-
-    HIS_A["Mock HIS Đà Nẵng API<br/>[REST / JSON]"]:::extHis
-    HIS_B["Mock HIS Huế API<br/>[SOAP / XML]"]:::extHis
-    HIS_C["Mock HIS Quảng Nam API<br/>[REST / JSON]"]:::extHis
-
-    BookingService -->|"1. dispatchSync(bookingData)"| HisDispatcher
-    HisDispatcher -->|"2. Check Circuit Health"| CircuitBreakerManager
-    HisDispatcher -->|"3. Convert to FHIR"| CanonicalModelMapper
-    HisDispatcher -->|"4. Route to Adapter via Factory"| IHisAdapter
-
-    IHisAdapter <|.. DaNangAdapter
-    IHisAdapter <|.. HueAdapter
-    IHisAdapter <|.. QuangNamAdapter
-
-    DaNangAdapter -->|"HTTP POST /api/appointments"| HIS_A
-    HueAdapter -->|"HTTP POST /ws/appointmentService.asmx [XML]"| HIS_B
-    QuangNamAdapter -->|"HTTP POST /his/v1/booking"| HIS_C
-```
-
-**Mô tả Component View:**
-1. Khi có lịch hẹn mới, `BookingService` gọi `HisDispatcher`.
-2. `HisDispatcher` kiểm tra tình trạng kết nối thông qua `CircuitBreakerManager`. Nếu circuit của cơ sở đang ở trạng thái OPEN, trả về lỗi ngay lập tức mà không gửi request mạng (tránh treo luồng).
-3. `CanonicalModelMapper` chuyển đổi thực thể nội bộ của MediLink thành đối tượng chuẩn **HL7 FHIR Appointment**.
-4. Dựa trên `facility_id`, Dispatcher gọi Adapter tương ứng thực hiện chuyển đổi lần hai từ chuẩn FHIR sang giao thức riêng của HIS đó (JSON hoặc XML).
-
----
-
-### 3.4. Deployment View (Khung nhìn Triển khai và Ranh giới An toàn)
-
-Mô tả môi trường thực thi chuẩn hóa thông qua Docker Compose, phân định rõ ràng các ranh giới tin cậy (Trust Boundaries) và mạng cách ly.
-
-```mermaid
-graph TD
-    classDef dmz fill:#fef3c7,stroke:#d97706,stroke-width:2px;
-    classDef internal fill:#d1fae5,stroke:#059669,stroke-width:2px;
-    classDef isolated fill:#fee2e2,stroke:#dc2626,stroke-width:2px;
-    classDef legacy fill:#f1f5f9,stroke:#475569,stroke-width:2px;
-
-    subgraph PublicInternet[" Internet Public Zone (Untrusted) "]
-        PatientBrowser["Trình duyệt / Thiết bị Di động"]
-        StaffBrowser["Máy tính Quầy Tiếp đón"]
-    end
-
-    subgraph HostServer[" Docker Compose Production Environment (Host Node) "]
-        subgraph DMZ_Network[" DMZ Bridge Network (172.20.0.0/24) "]
-            NginxProxy["Nginx Container<br/>[Port 80/443 -> SSL Termination / Reverse Proxy]"]:::dmz
+    subgraph MediLinkSys["MediLink Platform Boundary"]
+        subgraph AppZone["Trust Boundary A: Application Execution Zone (app-net)"]
+            CoreAPI["medilink-core<br/>[Node.js 22 Container - Port 3000]<br/>Gateway Rate Limiter, JWT Auth, ABAC+Consent,<br/>Booking Concurrency, EHR AES-256-GCM, ACL Engine"]
+            Worker["medilink-worker<br/>[Node.js 22 Container - Background Process]<br/>OutboxSyncWorker (Jitter), NotificationQueueWorker (Backoff),<br/>AuditIntegrityWorker (HMAC Verifier)"]
         end
 
-        subgraph App_Network[" Internal Application Network (172.21.0.0/24) "]
-            MediLinkApp["MediLink Core App Container<br/>[Node.js 20 LTS - Port 3000]"]:::internal
-            NotificationApp["Notification Worker Container<br/>[Node.js 20 LTS Background Process]"]:::internal
-        end
-
-        subgraph Data_Network[" Isolated Data Network (172.22.0.0/24 - Không lộ Port ra ngoài) "]
-            PostgresDB["PostgreSQL Database Container<br/>[Port 5432 - Lưu Booking, Users, Audit HMAC]"]:::isolated
-            RedisContainer["Redis Cache & Lock Container<br/>[Port 6379 - Distributed Lock & BullMQ]"]:::isolated
-        end
-
-        subgraph Mock_HIS_Network[" Mock HIS Local Network (172.23.0.0/24) "]
-            MockHisDaNang["Mock HIS Đà Nẵng Container<br/>[Port 8001 - REST JSON]"]:::legacy
-            MockHisHue["Mock HIS Huế Container<br/>[Port 8002 - SOAP XML]"]:::legacy
-            MockHisQuangNam["Mock HIS Quảng Nam Container<br/>[Port 8003 - Custom REST]"]:::legacy
+        subgraph DataZone["Trust Boundary B: Isolated Data Zone (data-net: internal=true, không lộ cổng Internet)"]
+            Redis["medilink-redis<br/>[Redis 7 Alpine - TCP 6379]<br/>Distributed Lock (SET NX PX 3000) & Fencing Counter"]
+            SQLiteDB["SQLite 3 WAL RDBMS<br/>[/data/db/medilink.db]<br/>Users, MPI, Consents, Slots, Bookings (UNIQUE),<br/>Encrypted EHR, Append-Only Audit (Trigger+HMAC), Outbox & Queue"]
+            ObjStore["Encrypted Lab Object Storage<br/>[/data/lab-files/*.enc]<br/>Lưu file PDF/Ảnh mã hóa nhị phân AES-256-GCM"]
         end
     end
 
-    PatientBrowser -->|"HTTPS (Port 443)"| NginxProxy
-    StaffBrowser -->|"HTTPS (Port 443)"| NginxProxy
+    subgraph HisZone["Trust Boundary C: External HIS Network (his-net)"]
+        MockDN["mock-his-danang [Port 8001 - REST/JSON]"]
+        MockHue["mock-his-hue [Port 8002 - SOAP/XML]"]
+        MockQN["mock-his-quangnam [Port 8003 - Custom RPC]"]
+    end
 
-    NginxProxy -->|"HTTP (Port 3000)"| MediLinkApp
+    SMS["Cổng SMS / Zalo ZNS / Email"]
 
-    MediLinkApp -->|"TCP 6379 (Lock/Cache)"| RedisContainer
-    MediLinkApp -->|"TCP 5432 (Data/Audit)"| PostgresDB
-    NotificationApp -->|"TCP 6379 (Queue Poll)"| RedisContainer
+    Client -->|"HTTPS JSON + Bearer JWT"| CoreAPI
+    CoreAPI -->|"RESP TCP 6379 (Sync < 5ms)"| Redis
+    CoreAPI -->|"SQLite ACID WAL (Sync)"| SQLiteDB
+    CoreAPI -->|"AES-256-GCM Blob I/O + Pre-signed URL"| ObjStore
 
-    MediLinkApp -->|"HTTP Internal"| MockHisDaNang
-    MediLinkApp -->|"HTTP Internal"| MockHisHue
-    MediLinkApp -->|"HTTP Internal"| MockHisQuangNam
+    CoreAPI -->|"HTTP JSON (Timeout 1.5s, CB Protected)"| MockDN
+    CoreAPI -->|"HTTP SOAP XML (Timeout 1.5s, CB Protected)"| MockHue
+    CoreAPI -->|"HTTP RPC JSON (Timeout 1.5s, CB Protected)"| MockQN
+
+    Worker -.->|"Poll Outbox/Queue & Verify HMAC"| SQLiteDB
+    Worker -.->|"Rate-Controlled Outbox Replay (+Jitter)"| MockHue
+    Worker -.->|"Async Send + Exponential Backoff"| SMS
 ```
 
-**Ranh giới Tin cậy (Trust Boundaries):**
-1. **Ranh giới 1 (Public vs DMZ):** Tường lửa Nginx chặn đứng tấn công DDoS cơ bản, cấu hình Rate Limiting (Token Bucket: tối đa 30 req/phút cho 1 IP đối với endpoint booking) và giải mã SSL TLS 1.3.
-2. **Ranh giới 2 (DMZ vs Internal App):** Chỉ Nginx mới có quyền forward gói tin tới MediLink Core App container.
-3. **Ranh giới 3 (App vs Data Network):** Cụm Redis và PostgreSQL nằm trong mạng riêng biệt (`isolated-data-net`), hoàn toàn không bind bất kỳ port nào ra ngoài máy chủ Host (chống lộ thông tin DB từ Internet).
-4. **Ranh giới 4 (Core vs External HIS):** Các cuộc gọi tới HIS bên ngoài đi qua lớp Adapter có cấu hình Timeout Budget (tối đa 2.5 giây) và Circuit Breaker.
+- **Legend & Giải thích Khung nhìn Container:**
+  - Mạng `data-net` được cấu hình `internal: true` trong `docker-compose.yml`, đảm bảo `medilink-redis` và volume dữ liệu `/data` tuyệt đối không thể bị kết nối trực tiếp từ bên ngoài Host hay từ vùng mạng HIS.
+  - Mọi kết nối từ `medilink-core` sang `mock-his-*` đều có ngân sách thời gian cứng `1.500 ms` và bộ ngắt mạch riêng biệt.
 
 ---
 
-### 3.5. Sequence Diagram 1: Luồng Đặt lịch Chống Double-Booking (ASR-01)
+### 3.3. C4 Level 3 – Component View bên trong `medilink-core` & Lớp Anti-Corruption Layer
+*(Mã nguồn gốc PlantUML: [`diagrams/c4-component-acl.puml`](../diagrams/c4-component-acl.puml))*
 
-Sơ đồ trình tự mô tả cách hệ thống phối hợp giữa Redis Distributed Lock, Idempotency Key và RDBMS Unique Constraint khi có 50 request cùng tranh chấp 1 slot.
+```mermaid
+flowchart TB
+    subgraph CoreContainer["Container: medilink-core (src/core/)"]
+        GW["HTTP Router & Token Bucket Rate Limiter<br/>(gateway/httpApp.js, rateLimiter.js)"]
+        AUTH["JWT Auth & Contextual ABAC + Consent Guard<br/>(auth/jwtService.js, authMiddleware.js, abacMiddleware.js)"]
+        BOOK["Booking Service & Slot Read Cache<br/>(booking/bookingService.js, slotCache.js)"]
+        LOCK["Lock & Idempotency Engine<br/>(booking/lockManager.js, idempotencyManager.js)"]
+        EHR["EHR & AES-256-GCM Encryption + Lab Signer<br/>(ehr/ehrService.js, encryptionService.js, labStorageService.js)"]
+        AUDIT["Append-Only Audit & Chain Verifier<br/>(audit/auditService.js, auditVerifier.js)"]
+
+        subgraph ACL["Anti-Corruption Layer (src/core/acl/)"]
+            DISP["HisIntegrationDispatcher<br/>(acl/hisDispatcher.js)"]
+            FHIR["CanonicalModelMapper - HL7 FHIR R4<br/>(acl/canonicalModel.js: Patient & Appointment)"]
+            CB["Per-Facility CircuitBreaker<br/>(acl/circuitBreaker.js)"]
+            PORT["<<Interface>> BaseHisAdapter<br/>(acl/adapters/baseAdapter.js)"]
+            ADP_DN["DaNangJsonAdapter"]
+            ADP_HUE["HueXmlAdapter"]
+            ADP_QN["QuangNamCustomAdapter"]
+            ADP_FHIR["FhirGenericAdapter (HIS #4)"]
+        end
+    end
+
+    GW --> AUTH
+    GW --> BOOK
+    AUTH --> EHR
+    AUTH --> AUDIT
+    BOOK --> LOCK
+    BOOK --> DISP
+    BOOK --> AUDIT
+    EHR --> AUDIT
+
+    DISP --> FHIR
+    DISP --> CB
+    CB --> PORT
+    PORT -.-> ADP_DN
+    PORT -.-> ADP_HUE
+    PORT -.-> ADP_QN
+    PORT -.-> ADP_FHIR
+```
+
+- **Legend:** Đường nét liền (`-->`) là lời gọi hàm phụ thuộc trong tiến trình (*In-process dependency*); đường nét đứt (`-.->`) là quan hệ kế thừa/hiện thực hóa giao diện cổng trừu tượng `BaseHisAdapter` (tuân thủ nguyên tắc Đảo ngược Phụ thuộc – *Dependency Inversion*).
+
+---
+
+### 3.4. Deployment View (Khung nhìn Triển khai Hạ tầng Container)
+*(Mã nguồn gốc PlantUML: [`diagrams/deployment-view.puml`](../diagrams/deployment-view.puml))*
+
+| Node / Container trong `docker-compose.yml` | Base Image | Mạng kết nối (*Docker Networks*) | Cổng mở ra Host | Vai trò triển khai thực tế |
+|:---|:---:|:---|:---:|:---|
+| `medilink-core` | `node:22-alpine` | `app-net`, `data-net`, `his-net` | `3000:3000` | Cổng vào API duy nhất của nền tảng MediLink. |
+| `medilink-worker` | `node:22-alpine` | `app-net`, `data-net`, `his-net` | *Không mở cổng* | Chạy ngầm đồng bộ bù Outbox, gửi tin nhắc lịch và kiểm định chuỗi băm Audit. |
+| `medilink-redis` | `redis:7-alpine` | Chỉ `data-net` (`internal: true`) | *Không mở cổng* | Cấp khóa phân tán nguyên tử và bộ đếm `fencing_seq` có bật lưu đĩa AOF mỗi giây. |
+| Volume `medilink_storage` | Docker Volume `/data` | Gắn vào `core` & `worker` | *Nội bộ* | Chứa tệp CSDL quan hệ `medilink.db` (chế độ WAL) và kho tệp xét nghiệm mã hóa `/data/lab-files/*.enc`. |
+| `mock-his-danang` | `node:22-alpine` | `his-net` | `8001:8001` | Giả lập máy chủ HIS cụm Đà Nẵng (`REST/JSON`). |
+| `mock-his-hue` | `node:22-alpine` | `his-net` | `8002:8002` | Giả lập máy chủ HIS cụm Huế (`SOAP/XML`); cho phép chạy `docker stop mock-his-hue` để test đứt kết nối thật! |
+| `mock-his-quangnam` | `node:22-alpine` | `his-net` | `8003:8003` | Giả lập máy chủ HIS cụm Quảng Nam (`Custom RPC/JSON`). |
+
+---
+
+### 3.5. Sequence Diagram 1 – Luồng Đặt lịch Chống Double-Booking & Dự phòng Outbox (`ASR-01` & `ASR-02`)
+*(Mã nguồn gốc PlantUML: [`diagrams/sequence-booking-concurrency.puml`](../diagrams/sequence-booking-concurrency.puml))*
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Patient1 as Bệnh nhân A (Đến trước)
-    actor Patient2 as Bệnh nhân B (Đến sau 5ms)
-    participant GW as API Gateway
-    participant LockEngine as Redis Lock Engine
-    participant BookingService as Booking Core Service
-    participant DB as Main Database
-    participant ACL as Anti-Corruption Layer
-    participant MockHIS as Mock HIS Đà Nẵng
+    actor P1 as Bệnh nhân A (Đến trước)
+    actor P2 as Bệnh nhân B (Đến sau 2ms)
+    participant Core as medilink-core (BookingService)
+    participant Redis as medilink-redis (LockManager)
+    participant DB as SQLite WAL DB (UNIQUE)
+    participant ACL as ACL + CircuitBreaker
+    participant HIS as Mock HIS Cơ sở
+    participant Worker as medilink-worker (Outbox)
 
-    Note over Patient1,Patient2: Hai bệnh nhân cùng chọn Slot: Bác sĩ Nguyễn Văn A, 08:00 sáng
-    Patient1->>GW: POST /api/bookings (doctor_id=101, slot=08:00, idemp_key=UUID-A)
-    Patient2->>GW: POST /api/bookings (doctor_id=101, slot=08:00, idemp_key=UUID-B)
+    P1->>Core: POST /api/bookings (DOC_101, 08:00, IdemKey=K1)
+    P2->>Core: POST /api/bookings (DOC_101, 08:00, IdemKey=K2)
 
-    GW->>BookingService: Forward Request A
-    GW->>BookingService: Forward Request B
+    Core->>Redis: INCR fencing_seq & SET lock:slot:DOC_101:08:00 "reqA:41" NX PX 3000
+    Redis-->>Core: OK (Giữ khóa thành công, fencingToken = 41)
 
-    rect rgb(230, 245, 255)
-        Note over BookingService,LockEngine: Tranh chấp khóa phân tán (Distributed Lock)
-        BookingService->>LockEngine: SET lock:slot:101:0800 NX PX 3000 (Request A)
-        LockEngine-->>BookingService: OK (Khóa thành công - Acquired)
+    Core->>Redis: SET lock:slot:DOC_101:08:00 "reqB:42" NX PX 3000
+    Redis-->>Core: NULL (Từ chối ngay trên RAM)
+    Core-->>P2: HTTP 409 Conflict (Fast-fail < 10ms, gợi ý khung giờ trống khác)
 
-        BookingService->>LockEngine: SET lock:slot:101:0800 NX PX 3000 (Request B)
-        LockEngine-->>BookingService: NULL (Bị từ chối - Lock Failed)
+    Core->>DB: BEGIN IMMEDIATE -> INSERT bookings (UNIQUE active_slot_key, fencing=41) -> COMMIT
+    DB-->>Core: OK (BK-9001)
+    Core->>Redis: EVAL Lua Unlock (kiểm tra đúng "reqA:41" rồi xóa khóa ngay!)
+    Redis-->>Core: 1 (Đã nhả khóa trước khi gọi mạng HIS)
+
+    Core->>ACL: syncAppointment(facilityId, payload + MPI)
+    alt Mạch CLOSED & HIS phản hồi bình thường (< 1500ms)
+        ACL->>HIS: POST Appointment (FHIR mapped -> JSON/XML/RPC)
+        HIS-->>ACL: 201/200 OK (hisReferenceCode)
+        Core->>DB: UPDATE bookings SET his_sync_status = 'SYNCED'
+    else HIS Huế lỗi 503 / Timeout > 1500ms hoặc Mạch đang OPEN
+        ACL--xHIS: Lỗi kết nối / Ngắt mạch tức thì
+        Core->>DB: Enqueue outbox_events('PENDING') & SET his_sync_status = 'OUTBOX_QUEUED'
     end
 
-    rect rgb(255, 240, 240)
-        Note over BookingService,Patient2: Xử lý Request B (Thất bại tức thì)
-        BookingService-->>GW: HTTP 409 Conflict ("Khung giờ này đang có người thao tác hoặc đã hết chỗ")
-        GW-->>Patient2: 409 Conflict (Gợi ý slot 08:30)
-    end
+    Core->>DB: Enqueue notification_jobs + Append audit_logs(HMAC) + Save idempotency(K1)
+    Core-->>P1: HTTP 201 Created (Xác nhận giữ chỗ thành công)
 
-    rect rgb(240, 255, 240)
-        Note over BookingService,MockHIS: Xử lý Request A (Thành công)
-        BookingService->>DB: Check slot status & INSERT booking (UNIQUE KEY)
-        DB-->>BookingService: Insert Success (Booking ID = 9901)
-        BookingService->>ACL: dispatchSync(BookingData)
-        ACL->>MockHIS: Sync Appointment
-        MockHIS-->>ACL: Sync ACK (HIS_REF = "DN-8812")
-        BookingService->>LockEngine: DEL lock:slot:101:0800 (Giải phóng khóa)
-        BookingService-->>GW: HTTP 201 Created (Booking Confirmed)
-        GW-->>Patient1: 201 Created (Mã lịch hẹn: MEDI-9901)
+    opt Khi HIS Huế phục hồi sau sự cố
+        Worker->>DB: Đọc lô 5 sự kiện outbox_events + nghỉ Jitter 20-60ms
+        Worker->>ACL: Đồng bộ lại kèm IdempotencyToken
+        ACL->>HIS: POST SOAP/XML
+        HIS-->>ACL: 200 OK (MaTiepDonHue)
+        Worker->>DB: Đánh dấu Outbox & Booking = 'SYNCED'
     end
 ```
 
 ---
 
-### 3.6. Sequence Diagram 2: Luồng Phân quyền Contextual ABAC và Audit Log Bất biến (ASR-03 & ASR-05)
-
-Sơ đồ trình tự mô tả cách hệ thống chặn đứng hành vi nhân viên lễ tân cơ sở Đà Nẵng truy cập bệnh án cơ sở Huế và tạo vết kiểm toán liên hoàn có mã băm HMAC.
+### 3.6. Sequence Diagram 2 – Luồng Phân quyền ABAC, Consent, Giải mã `AES-256-GCM` & Audit HMAC (`ASR-03` & `QAS-05`)
+*(Mã nguồn gốc PlantUML: [`diagrams/sequence-security-audit.puml`](../diagrams/sequence-security-audit.puml))*
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Staff as Lễ tân Cơ sở Đà Nẵng
-    participant GW as API Gateway
-    participant Auth as Auth & ABAC Middleware
-    participant EHR as EHR Service
-    participant Audit as Audit Service (HMAC Chained)
-    participant DB as Encrypted Database
+    actor RecDN as Lễ tân Đà Nẵng (FAC_DANANG)
+    actor DocDN as Bác sĩ Đà Nẵng (FAC_DANANG)
+    participant Guard as Auth + ABAC Middleware
+    participant EHR as EhrService + EncryptionService
+    participant Obj as LabStorageService
+    participant Audit as AuditService (HMAC Chain)
+    participant DB as SQLite WAL DB
 
-    Staff->>GW: GET /api/ehr/records/PATIENT-HUE-099 [Bearer Token Đà Nẵng]
-    GW->>Auth: Xác thực Token & Giải mã Claims (Role=RECEPTIONIST, facility_id=FAC_DANANG)
-    Auth->>EHR: Query Record Metadata (PATIENT-HUE-099)
-    EHR->>DB: SELECT facility_id, patient_id FROM medical_records WHERE id = ?
-    DB-->>EHR: Return { facility_id: "FAC_HUE", is_sensitive: true }
-    EHR-->>Auth: Record Metadata
+    Note over RecDN,DB: Luồng 1: Lễ tân Đà Nẵng cố đọc hồ sơ bệnh nhân Huế (REC-HUE-5544)
+    RecDN->>Guard: GET /api/ehr/records/REC-HUE-5544 (Bearer JWT)
+    Guard->>DB: Đọc facility_id gốc của REC-HUE-5544 -> 'FAC_HUE'
+    Guard->>Audit: Ghi nhận vi phạm (FAC_DANANG != FAC_HUE)
+    Audit->>DB: INSERT audit_logs (prev_hash -> current_hash HMAC-SHA256)
+    Guard-->>RecDN: HTTP 403 Forbidden (Dữ liệu nhạy cảm rò rỉ = 0 byte)
 
-    rect rgb(255, 235, 235)
-        Note over Auth: Kiểm tra chính sách ABAC Contextual Policy<br/>Condition: user.facility_id == record.facility_id<br/>"FAC_DANANG" != "FAC_HUE" -> VIOLATION!
-        Auth->>Audit: logSecurityEvent(Actor=Staff, Action=READ, Target=PATIENT-HUE-099, Status=DENIED_403)
-    end
-
-    rect rgb(245, 240, 255)
-        Note over Audit: Tính toán chuỗi băm HMAC liên hoàn<br/>hash = HMAC_SHA256(secret, prev_hash + timestamp + actor + target)
-        Audit->>DB: INSERT INTO audit_logs (prev_hash, current_hash, data) [APPEND ONLY]
-        DB-->>Audit: ACK
-    end
-
-    Auth-->>GW: HTTP 403 Forbidden ("Bạn không có thẩm quyền truy cập hồ sơ thuộc cơ sở khác")
-    GW-->>Staff: 403 Forbidden (Từ chối truy cập)
+    Note over DocDN,DB: Luồng 2: Bác sĩ liên cơ sở đọc hồ sơ khi đã có Consent của bệnh nhân
+    DocDN->>Guard: GET /api/ehr/records/REC-HUE-5544 (Bearer JWT)
+    Guard->>DB: Kiểm tra patient_consents(user_pat_02, FAC_DANANG) -> is_active = 1
+    Guard->>EHR: Ủy quyền đọc mức FULL_CLINICAL
+    EHR->>EHR: Giải mã AES-256-GCM các trường chẩn đoán, ghi chú, đơn thuốc trong RAM
+    EHR->>Obj: Ký Pre-signed URL (TTL = 120s) cho tệp lab-hue-5544.pdf
+    EHR->>Audit: Ghi vết truy xuất hợp lệ vào chuỗi băm HMAC
+    Audit->>DB: INSERT audit_logs (Trigger cấm UPDATE/DELETE)
+    EHR-->>DocDN: HTTP 200 OK (Bệnh án rõ + Pre-signed URL tải PDF xét nghiệm)
 ```
 
 ---
 
-## 4. Tự kiểm tra Mốc M2
+## 4. Danh mục Tổng hợp 7 Quyết định Kiến trúc (ADR Index – Bước 10)
 
-1. **Chỉ vào một mũi tên bất kỳ trên sơ đồ:**
-   - *Mũi tên:* Từ `DaNangAdapter` sang `Mock HIS Đà Nẵng API`.
-   - *Giao thức:* HTTP/1.1 REST trên nền JSON.
-   - *Đồng bộ hay bất đồng bộ:* Đồng bộ (Synchronous HTTP POST) kèm Timeout Budget 2.5 giây.
-   - *Nếu đích bị lỗi hoặc sập:* Circuit Breaker tại `CircuitBreakerManager` sẽ tăng bộ đếm lỗi (Failure Counter). Sau 5 lần timeout liên tiếp, circuit chuyển sang trạng thái *OPEN*. Các request tiếp theo vào cơ sở Đà Nẵng sẽ kích hoạt cơ chế Fallback (lưu trạng thái PENDING_SYNC vào cơ sở dữ liệu và hàng đợi Outbox, trả về phản hồi chấp nhận có điều kiện cho bệnh nhân mà không để treo tiến trình).
+| Mã ADR | Tệp chi tiết trong `adr/` | Trạng thái | Quyết định cốt lõi & Truy vết ASR |
+|:------:|---------------------------|:----------:|-----------------------------------|
+| **`ADR-001`** | [`0001-architectural-style.md`](../adr/0001-architectural-style.md) | `Accepted` | Chọn **Modular Monolith + Hexagonal Architecture** kèm tiến trình `medilink-worker` tách rời (`ASR-01`, `ASR-02`, `ASR-04`, `C-07`). |
+| **`ADR-002`** | [`0002-his-integration-acl-canonical-model.md`](../adr/0002-his-integration-acl-canonical-model.md) | `Partially Superseded by ADR-007` | Tích hợp 3 HIS qua **Anti-Corruption Layer + Canonical Model chuẩn HL7 FHIR R4 (`Patient`, `Appointment`)** và bảng ánh xạ `MPI` (`ASR-04`). |
+| **`ADR-003`** | [`0003-concurrency-distributed-locking-idempotency.md`](../adr/0003-concurrency-distributed-locking-idempotency.md) | `Accepted` | Chống double-booking 3 lớp: **Idempotency Key + Redis Lock (`SET NX PX` + Fencing Token, nhả sớm) + RDBMS `UNIQUE`** (`ASR-01`, `QAS-07`). |
+| **`ADR-004`** | [`0004-security-rbac-facility-scope-immutable-audit.md`](../adr/0004-security-rbac-facility-scope-immutable-audit.md) | `Accepted` | Bảo mật y tế: **JWT HS256 + RBAC/ABAC/Consent + Data Masking + Mã hóa `AES-256-GCM` + Trigger & HMAC Audit Chain** (`ASR-03`, `QAS-05`). |
+| **`ADR-005`** | [`0005-asynchronous-notification-queue.md`](../adr/0005-asynchronous-notification-queue.md) | `Accepted` | Gửi thông báo nhắc lịch Zalo/SMS/Email bất đồng bộ qua **Persistent Queue + Worker có Exponential Backoff & DLQ** (`QAS-08`). |
+| **`ADR-006`** | [`0006-lab-result-object-storage-presigned-url.md`](../adr/0006-lab-result-object-storage-presigned-url.md) | `Accepted` | Lưu tệp PDF/ảnh xét nghiệm trên **Encrypted Object Storage tách rời DB + Pre-signed URL ngắn hạn 120s** (`ASR-03`, `QAS-06`). |
+| **`ADR-007`** | [`0007-v2-outbox-rate-controlled-recovery.md`](../adr/0007-v2-outbox-rate-controlled-recovery.md) | `Accepted (v2)` | Nâng cấp xử lý lỗi HIS ở M3: **Per-Facility Circuit Breaker + Transactional Outbox + Rate-Controlled Sync có Jitter** (`ASR-02`). |
 
-2. **Nếu tải hệ thống tăng đột biến gấp 10 lần (ví dụ: ngày tiêm chủng cộng đồng):**
-   - *ADR nào sẽ bị thay thế hoặc nâng cấp?*
-   - **ADR-001 (Modular Monolith):** Lúc này mô-đun `Booking & Scheduling` và mô-đun `Anti-Corruption Layer` có thể cần được trích xuất thành 2 Microservices độc lập (Scale-out riêng rẽ) với cụm Kafka/RabbitMQ phân vùng theo cụm cơ sở địa lý.
-   - **ADR-005 (Notification Queue):** Hàng đợi Redis đơn lẻ sẽ được chuyển đổi sang cụm phân tán Redis Cluster hoặc Apache Kafka để chịu tải hàng chục nghìn thông báo mỗi giây.
+> **Tự kiểm tra Bước 9 & Bước 10:**
+> 1. **Chỉ vào mũi tên từ `medilink-core` sang `mock-his-hue`:** Giao thức là `HTTP POST` mang gói tin `SOAP 1.1 / XML` trên cổng `8002`; chế độ gọi là **đồng bộ có giới hạn thời gian cứng `1.500 ms`** khi mạch `CLOSED`. Nếu `mock-his-hue` sập hoặc treo quá `1.500 ms` 3 lần liên tiếp, `CircuitBreaker(FAC_HUE)` mở mạch `OPEN`, mọi yêu cầu tiếp theo không gửi gói tin mạng nữa mà ghi thẳng vào bảng `outbox_events` trong `< 10 ms` để `medilink-worker` đồng bộ bù về sau.
+> 2. **Nếu bối cảnh thay đổi – tải tăng gấp 10 lần (120 cơ sở, 25.000 lịch hẹn/ngày), ADR nào sẽ bị thay thế trước?**
+>    - Trước tiên là nâng cấp hạ tầng lưu trữ dưới `ADR-001` & `ADR-005`: chuyển CSDL từ SQLite WAL trên 1 volume sang cụm **PostgreSQL Primary + Read Replicas** và chuyển hàng đợi công việc sang **Redis Cluster / RabbitMQ** để chạy nhiều replica `medilink-core` song song phía sau Load Balancer; tiếp đó có thể trích xuất riêng module `acl` thành dịch vụ tích hợp độc lập nhờ giao diện `BaseHisAdapter` đã tách sẵn.

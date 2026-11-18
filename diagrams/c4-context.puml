@@ -3,32 +3,40 @@
 
 LAYOUT_WITH_LEGEND()
 
-title System Context Diagram [C4 Level 1] - Nền tảng Y tế MediLink
+title System Context View [C4 Level 1] - Nền tảng Đặt lịch & EHR MediLink (Kèm Trust Boundaries)
 
-Person(patient, "Bệnh nhân (Patient)", "Người dùng ứng dụng tìm kiếm bác sĩ, đặt lịch khám, thanh toán cọc và tra cứu hồ sơ sức khỏe.")
-Person(doctor, "Bác sĩ (Doctor)", "Khám chữa bệnh, xem lịch làm việc cá nhân, tra cứu tiền sử bệnh án và kê đơn điện tử.")
-Person(receptionist, "Lễ tân / Thu ngân", "Tiếp đón bệnh nhân tại quầy, check-in theo cơ sở được phân quyền, in phiếu khám.")
-Person(director, "Ban Giám đốc chuỗi", "Theo dõi dashboard tổng quan về công suất phòng khám, doanh thu và vận hành 12 cơ sở.")
-
-System_Boundary(c1, "Ranh giới An toàn Nền tảng MediLink") {
-    System(medilink, "MediLink Platform", "Nền tảng tích hợp trung tâm quản lý đặt lịch khám, hồ sơ sức khỏe điện tử (EHR), bảo mật RBAC/ABAC và liên thông HIS.")
+Boundary(tb_public, "Untrusted Public Zone (Internet / 4G / Wi-Fi Phòng khám)", "Trust Boundary 1") {
+    Person(patient, "Bệnh nhân (Patient)", "Tìm bác sĩ, đặt/hủy lịch khám, nộp cọc, cấp/thu hồi Consent chia sẻ hồ sơ và xem EHR cá nhân.")
+    Person(doctor, "Bác sĩ (Doctor)", "Quản lý lịch làm việc, xem bệnh sử (EHR), ghi chú khám và kê đơn điện tử.")
+    Person(receptionist, "Lễ tân / Thu ngân (Receptionist)", "Check-in bệnh nhân tại quầy, đặt lịch hộ và tra cứu hành chính trong phạm vi cơ sở mình.")
+    Person(director, "Ban Giám đốc (Executive Board)", "Theo dõi Dashboard công suất khám, tỷ lệ đồng bộ và vận hành chuỗi 12 phòng khám.")
 }
 
-System_Ext(his_danang, "HIS Đà Nẵng", "Hệ thống quản lý phòng khám tại Đà Nẵng [REST / JSON API].")
-System_Ext(his_hue, "HIS Huế (Di sản)", "Hệ thống quản lý phòng khám cũ tại Huế [SOAP / XML Service].")
-System_Ext(his_quangnam, "HIS Quảng Nam", "Hệ thống quản lý phòng khám tại Quảng Nam [Custom Database / REST].")
-System_Ext(payment_gw, "Cổng Thanh toán Điện tử", "Xử lý giao dịch thanh toán đặt cọc trực tuyến (MoMo, VNPay, Ngân hàng).")
-System_Ext(notification_gw, "Cổng SMS / Zalo / Email", "Hệ thống gửi tin nhắn nhắc hẹn, mã QR check-in tự động cho bệnh nhân.")
+System_Boundary(tb_medilink, "Trusted MediLink Platform Boundary (Tuân thủ Nghị định 13/2023/NĐ-CP)") {
+    System(medilink, "MediLink Central Platform", "Nền tảng tập trung quản lý đặt lịch chống trùng, liên thông EHR mã hóa AES-256-GCM, phân quyền RBAC+ABAC, Audit HMAC bất biến và ACL chuẩn HL7 FHIR R4.")
+}
 
-Rel(patient, medilink, "Tìm bác sĩ, đặt lịch hẹn, xem hồ sơ bệnh án", "HTTPS / JSON")
-Rel(doctor, medilink, "Xem lịch khám, cập nhật chẩn đoán, kê đơn", "HTTPS / JSON")
-Rel(receptionist, medilink, "Check-in bệnh nhân theo cơ sở (phân quyền nghiêm ngặt)", "HTTPS / JSON")
-Rel(director, medilink, "Tra cứu báo cáo thống kê, dashboard vận hành", "HTTPS / JSON")
+Boundary(tb_his, "External Clinic Legacy Zone (Mạng riêng 12 Phòng khám - 3 Nhóm HIS Dị thể)", "Trust Boundary 2") {
+    System_Ext(his_danang, "HIS Cụm Đà Nẵng (5 cơ sở)", "Phần mềm HIS Web hiện đại, mã bệnh nhân UUID, giao tiếp REST/JSON [Port 8001].")
+    System_Ext(his_hue, "HIS Cụm Huế (4 cơ sở)", "Phần mềm HIS di sản Client-Server, mã bệnh nhân HUE-BN-xxx, giao tiếp SOAP 1.1 / XML [Port 8002].")
+    System_Ext(his_quangnam, "HIS Cụm Quảng Nam (3 cơ sở)", "Phần mềm HIS chuyên biệt, mã bệnh nhân số nguyên ma_bn_noi_bo, giao tiếp Custom RPC/JSON [Port 8003].")
+}
 
-Rel(medilink, his_danang, "Đồng bộ lịch hẹn và trạng thái tiếp đón", "HTTP/REST JSON")
-Rel(medilink, his_hue, "Đồng bộ lịch hẹn qua Adapter chuyên biệt", "SOAP / XML")
-Rel(medilink, his_quangnam, "Đồng bộ lịch hẹn hai chiều", "HTTP/REST")
-Rel(medilink, payment_gw, "Khởi tạo và đối soát giao dịch đặt cọc", "HTTPS / API")
-Rel(medilink, notification_gw, "Phát lệnh gửi tin nhắn nhắc hẹn tự động", "HTTPS / API")
+Boundary(tb_thirdparty, "External Third-Party Providers Zone", "Trust Boundary 3") {
+    System_Ext(payment_gw, "Cổng Thanh toán Đặt cọc", "Xử lý thu cọc & hoàn cọc trực tuyến (VNPay / MoMo giả lập).")
+    System_Ext(notif_gw, "Cổng SMS / Zalo ZNS / Email", "Nhà cung cấp dịch vụ gửi tin nhắn xác nhận QR và nhắc lịch trước 24h / 2h.")
+}
 
+Rel(patient, medilink, "Đặt lịch, thanh toán cọc, quản lý Consent, xem EHR", "HTTPS / TLS 1.3 + JWT")
+Rel(doctor, medilink, "Xem lịch trực, tra cứu EHR liên cơ sở (có Consent), cập nhật bệnh án", "HTTPS / TLS 1.3 + JWT")
+Rel(receptionist, medilink, "Check-in và xem thông tin hành chính đúng facility_id", "HTTPS / TLS 1.3 + JWT")
+Rel(director, medilink, "Xem Dashboard thống kê ẩn danh toàn chuỗi", "HTTPS / TLS 1.3 + JWT")
+
+Rel(medilink, his_danang, "Đồng bộ lịch khám (Sync / Outbox Replay)", "HTTP REST/JSON + X-Idempotency-Key")
+Rel(medilink, his_hue, "Đồng bộ lịch khám qua SOAP Envelope", "HTTP SOAP 1.1 / XML")
+Rel(medilink, his_quangnam, "Đồng bộ lịch khám qua Stored-Proc RPC", "HTTP Custom RPC/JSON")
+Rel(medilink, payment_gw, "Khởi tạo thanh toán cọc & nhận Webhook đối soát", "HTTPS REST + HMAC Signature")
+Rel(medilink, notif_gw, "Gửi tin nhắn xác nhận & nhắc lịch bất đồng bộ", "HTTPS REST (Async Worker)")
+
+SHOW_LEGEND()
 @enduml

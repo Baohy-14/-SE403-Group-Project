@@ -1,64 +1,61 @@
 @startuml Deployment_View_MediLink
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Deployment.puml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-Deployment.puml
 
 LAYOUT_WITH_LEGEND()
 
-title Deployment Diagram - Môi trường Chuẩn Docker Compose (MediLink Platform)
+title Deployment View - Hạ tầng Docker Compose Chuẩn hóa (Khớp 100% với `docker-compose.yml`)
 
-Deployment_Node(user_env, "Client Devices", "Trình duyệt & Di động") {
-    Deployment_Node(browser, "Web Browser / Mobile App") {
-        Container(client_app, "Frontend Application", "Single Page App", "Giao diện người dùng HTTPS")
+Deployment_Node(client_zone, "Untrusted Client Devices", "Internet / Clinic Wi-Fi") {
+    Deployment_Node(client_runtime, "Web Browser / Mobile App / Test Runner") {
+        Container(client_ui, "MediLink Client", "HTTPS / Fetch Client", "Gửi yêu cầu đặt lịch, tra cứu EHR, quản trị hệ thống")
     }
 }
 
-Deployment_Node(cloud_host, "Cloud Host / Server Machine (Linux / Windows)", "Docker Host Engine") {
+Deployment_Node(docker_host, "MediLink Host Server (Linux Production / Windows Docker Engine)", "Docker Compose v2") {
 
-    Deployment_Node(dmz_net, "DMZ Network (172.20.0.0/24)", "Public Subnet") {
-        Deployment_Node(nginx_node, "Reverse Proxy Container", "Docker Container") {
-            Container(nginx_proxy, "Nginx Ingress Proxy", "Nginx 1.25", "SSL Termination TLS 1.3, Rate Limiting Token Bucket, Ports 80 & 443")
+    Deployment_Node(net_app, "app-net (Bridge Network)", "Application Tier") {
+        Deployment_Node(c_core, "Container: medilink-core", "node:22-alpine") {
+            Container(app_core, "core/server.js", "Node.js 22 LTS", "Modular Monolith API + Rate Limiter + ACL [Exposed Port 3000:3000]")
+        }
+        Deployment_Node(c_worker, "Container: medilink-worker", "node:22-alpine") {
+            Container(app_worker, "worker/backgroundWorker.js", "Node.js 22 LTS", "Outbox Rate-Controlled Sync + Notification Worker + Audit Verifier")
         }
     }
 
-    Deployment_Node(app_net, "Internal App Network (172.21.0.0/24)", "Private Subnet") {
-        Deployment_Node(core_node, "MediLink Core Container", "Docker Container") {
-            Container(core_app, "MediLink Backend App", "Node.js 20 LTS", "Cung cấp REST APIs, Auth ABAC, Booking Logic, ACL Engine")
+    Deployment_Node(net_data, "data-net (Internal Bridge: internal = true)", "Isolated Data Tier - Không kết nối Internet") {
+        Deployment_Node(c_redis, "Container: medilink-redis", "redis:7-alpine") {
+            ContainerDb(db_redis, "Redis Server (AOF everysec)", "Port 6379 (Internal Only)", "Distributed Locks & Monotonic Fencing Counter")
         }
-        Deployment_Node(worker_node, "Background Worker Container", "Docker Container") {
-            Container(worker_app, "Notification Worker", "Node.js 20 LTS", "Quét lịch và gửi SMS/Zalo/Email từ hàng đợi BullMQ")
-        }
-    }
-
-    Deployment_Node(data_net, "Isolated Data Network (172.22.0.0/24)", "Database Subnet (No Public IP)") {
-        Deployment_Node(pg_node, "Database Container", "Docker Container") {
-            ContainerDb(pg_db, "PostgreSQL Database", "PostgreSQL 16", "Lưu trữ dữ liệu quan hệ, UNIQUE slot, bảng Audit HMAC Append-only")
-        }
-        Deployment_Node(redis_node, "In-Memory Store Container", "Docker Container") {
-            ContainerDb(redis_db, "Redis Cluster / Standalone", "Redis 7.2", "Quản lý Distributed Locks, Idempotency Cache, Circuit Breaker State")
+        Deployment_Node(vol_storage, "Shared Volume: medilink_storage (/data)", "Encrypted Persistent Volume") {
+            ContainerDb(db_sqlite, "medilink.db (SQLite WAL)", "RDBMS File", "Bookings UNIQUE, Encrypted EHR, Append-Only Audit Logs, Outbox/Queue")
+            ContainerDb(bucket_lab, "/data/lab-files/*.enc", "Object Storage Bucket", "Encrypted Lab PDF & Imaging Blobs")
         }
     }
 
-    Deployment_Node(his_net, "Mock HIS Network (172.23.0.0/24)", "Subnet Giả lập Cơ sở") {
-        Deployment_Node(his_dn_node, "Mock HIS Đà Nẵng Container", "Docker Container") {
-            Container(mock_dn, "Mock HIS Đà Nẵng", "Node.js / WireMock", "Cổng REST JSON Service (Port 8001)")
+    Deployment_Node(net_his, "his-net (Bridge Network)", "Simulated Clinic Legacy HIS Subnet") {
+        Deployment_Node(c_dn, "Container: mock-his-danang", "node:22-alpine") {
+            Container(his_dn, "hisDaNangServer.js", "Port 8001", "Mock HIS Đà Nẵng [REST / JSON]")
         }
-        Deployment_Node(his_hue_node, "Mock HIS Huế Container", "Docker Container") {
-            Container(mock_hue, "Mock HIS Huế", "Node.js / WireMock", "Cổng SOAP XML Service (Port 8002)")
+        Deployment_Node(c_hue, "Container: mock-his-hue", "node:22-alpine") {
+            Container(his_hue, "hisHueServer.js", "Port 8002", "Mock HIS Huế [SOAP 1.1 / XML + Chaos Mode]")
         }
-        Deployment_Node(his_qn_node, "Mock HIS Quảng Nam Container", "Docker Container") {
-            Container(mock_qn, "Mock HIS Quảng Nam", "Node.js / WireMock", "Cổng Custom REST Service (Port 8003)")
+        Deployment_Node(c_qn, "Container: mock-his-quangnam", "node:22-alpine") {
+            Container(his_qn, "hisQuangNamServer.js", "Port 8003", "Mock HIS Quảng Nam [Custom RPC / JSON]")
         }
     }
 }
 
-Rel(client_app, nginx_proxy, "Giao tiếp an toàn", "HTTPS / Port 443 (TLS 1.3)")
-Rel(nginx_proxy, core_app, "Reverse Proxy", "HTTP / Port 3000")
+Rel(client_ui, app_core, "REST API Calls", "HTTPS/HTTP Port 3000")
+Rel(app_core, db_redis, "SET NX PX 3000 / EVAL Lua", "TCP Port 6379 (data-net)")
+Rel(app_core, db_sqlite, "ACID Read/Write", "POSIX Volume Mount (/data)")
+Rel(app_core, bucket_lab, "AES-256-GCM Blob I/O", "POSIX Volume Mount (/data)")
 
-Rel(core_app, redis_db, "Distributed Locks & Cache", "TCP / Port 6379")
-Rel(core_app, pg_db, "SQL Queries & Transactions", "TCP / Port 5432")
-Rel(worker_app, redis_db, "Poll Notification Queue", "TCP / Port 6379")
+Rel(app_worker, db_sqlite, "Poll Outbox & Notification Queue + Verify Audit", "POSIX Volume Mount (/data)")
 
-Rel(core_app, mock_dn, "Sync Appointment [REST JSON]", "HTTP / Port 8001")
-Rel(core_app, mock_hue, "Sync Appointment [SOAP XML]", "HTTP / Port 8002")
-Rel(core_app, mock_qn, "Sync Appointment [Custom REST]", "HTTP / Port 8003")
+Rel(app_core, his_dn, "Sync Appointment", "HTTP Port 8001 (his-net)")
+Rel(app_core, his_hue, "Sync Appointment (Circuit Breaker Protected)", "HTTP SOAP Port 8002 (his-net)")
+Rel(app_core, his_qn, "Sync Appointment", "HTTP Port 8003 (his-net)")
+Rel(app_worker, his_hue, "Rate-Controlled Outbox Replay (+Jitter)", "HTTP SOAP Port 8002 (his-net)")
 
+SHOW_LEGEND()
 @enduml

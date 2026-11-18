@@ -1,46 +1,53 @@
-@startuml Sequence_Security_Audit
+@startuml Sequence_Security_ABAC_Audit_MediLink
 autonumber
-skinparam style strictuml
-skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 220
 
-title Sequence Diagram: Phân quyền Contextual ABAC & Audit Log Bất biến (ASR-03 & ASR-05)
+title Sequence Diagram 2 (ASR-03, QAS-05 & ADR-004/005): Phân quyền ABAC, Consent, Giải mã AES-256-GCM & Audit HMAC
 
-actor "Lễ tân Đà Nẵng\n(Attacker / Misuser)" as Staff
-participant "API Gateway\n(TLS Termination)" as GW
-participant "Auth Middleware\n(Token Verifier)" as Auth
-participant "ABAC Policy Engine\n(Context Checker)" as ABAC
-participant "EHR Service\n(Medical Records)" as EHR
-participant "Audit Service\n(HMAC Chaining)" as Audit
-participant "Audit Store\n(Postgres Append-Only)" as AuditDB
+actor "Lễ tân Đà Nẵng\n(FAC_DANANG)" as REC_DN
+actor "Bác sĩ Đà Nẵng\n(FAC_DANANG)" as DOC_DN
+participant "Auth & ABAC\nMiddleware" as ABAC
+participant "EhrService &\nAES-256-GCM" as EHR
+participant "LabStorageService\n(Pre-signed URL)" as OBJ
+participant "AuditService\n(HMAC-SHA256 Chain)" as AUDIT
+database "SQLite WAL DB\n(Trigger Append-Only)" as DB
 
-Staff -> GW: GET /api/ehr/records/REC-HUE-5544\n[Authorization: Bearer <JWT_Token_Staff_Danang>]
+== Kịch bản A (ASR-03): Lễ tân Đà Nẵng cố xem hồ sơ bệnh nhân Huế (REC-HUE-5544) ==
+REC_DN -> ABAC: GET /api/ehr/records/REC-HUE-5544\n[Authorization: Bearer <JWT role=RECEPTIONIST, facility_id=FAC_DANANG>]
+ABAC -> ABAC: Xác thực chữ ký HMAC-SHA256 của JWT Token
+ABAC -> DB: SELECT facility_id, patient_id FROM medical_records WHERE id = 'REC-HUE-5544'
+DB --> ABAC: { facility_id: 'FAC_HUE', patient_id: 'user_pat_02' }
 
-GW -> Auth: Validate Token & Claims
-activate Auth
-Auth --> Auth: Trích xuất Payload:\n{sub: "staff_dn_01", role: "RECEPTIONIST", facility_id: "FAC_DANANG"}
-Auth -> EHR: Query Metadata for "REC-HUE-5544"
-deactivate Auth
+note over ABAC #FFEEEE
+  Vi phạm chính sách Contextual ABAC:
+  user.facility_id ('FAC_DANANG') != record.facility_id ('FAC_HUE')
+end note
 
-activate EHR
-EHR --> EHR: Truy xuất thuộc tính tài nguyên:\n{record_id: "REC-HUE-5544", facility_id: "FAC_HUE", is_sensitive: true}
-EHR -> ABAC: evaluatePolicy(subject, resource, action="READ")
-deactivate EHR
+ABAC -> AUDIT: logSecurityEvent(ACCESS_DENIED_CROSS_FACILITY_EHR, status=DENIED_403)
+AUDIT -> DB: SELECT current_hash FROM audit_logs ORDER BY id DESC LIMIT 1
+DB --> AUDIT: prev_hash
+AUDIT -> AUDIT: current_hash = HMAC_SHA256(SECRET, prev_hash | timestamp | actor | action | ...)
+AUDIT -> DB: INSERT INTO audit_logs (...) [SQLite Trigger cấm UPDATE/DELETE]
+ABAC --> REC_DN: HTTP 403 Forbidden (CROSS_FACILITY_ACCESS_FORBIDDEN - Rò rỉ = 0 byte)
 
-activate ABAC
-Note over ABAC: Kiểm tra Quy tắc ABAC:\n1. role == "RECEPTIONIST"? -> TRUE\n2. subject.facility_id == resource.facility_id?\n"FAC_DANANG" == "FAC_HUE"? -> FALSE (XUNG ĐỘT CƠ SỞ)
-ABAC --> Auth: ACCESS_DENIED ("Truy cập trái tuyến ngoài phạm vi cơ sở phân công")
-deactivate ABAC
+== Kịch bản B (Nghị định 13/2023): Bác sĩ liên cơ sở đọc EHR khi đã có Consent của Bệnh nhân ==
+DOC_DN -> ABAC: GET /api/ehr/records/REC-HUE-5544\n[Authorization: Bearer <JWT role=DOCTOR, facility_id=FAC_DANANG>]
+ABAC -> DB: SELECT is_active FROM patient_consents WHERE patient_id='user_pat_02' AND granted_facility_id='FAC_DANANG'
+DB --> ABAC: { is_active: 1 } (Đã được bệnh nhân cấp quyền liên thông)
 
-group #MistyRose Bước 2: Ghi nhận Vi phạm An ninh vào Chuỗi Kiểm toán Bất biến
-    Auth -> Audit: logSecurityViolation({\n  actor: "staff_dn_01",\n  role: "RECEPTIONIST",\n  target: "REC-HUE-5544",\n  action: "UNAUTHORIZED_READ_ATTEMPT",\n  status: 403\n})
-    activate Audit
-    Note over Audit: Tính toán mã băm HMAC liên hoàn:\nprev_hash = SELECT current_hash FROM audit_logs ORDER BY id DESC LIMIT 1\nhash = HMAC_SHA256(SECRET_KEY, prev_hash + timestamp + actor + action + target)
-    Audit -> AuditDB: INSERT INTO audit_logs (prev_hash, current_hash, data) [APPEND-ONLY]
-    AuditDB --> Audit: Record Persisted (ID = 88219)
-    deactivate Audit
-end
+ABAC -> EHR: getAuthorizedRecord(rawRecord, user=DOC_DN, scope='FULL_CLINICAL')
+EHR -> EHR: Giải mã AES-256-GCM trong RAM (diagnosis_enc, clinical_notes_enc, prescription_enc)
+EHR -> OBJ: generatePresignedUrl('lab-hue-5544.pdf', viewer='user_doc_dn', ttl=120s)
+OBJ --> EHR: "/api/ehr/files/lab-hue-5544.pdf?viewer=user_doc_dn&expires=...&sig=..."
+EHR -> AUDIT: logSecurityEvent(EHR_SENSITIVE_CLINICAL_READ, status=SUCCESS)
+AUDIT -> DB: INSERT INTO audit_logs (prev_hash -> current_hash)
+EHR --> DOC_DN: HTTP 200 OK (Bệnh án đã giải mã + Pre-signed URL tải PDF xét nghiệm có hạn 120s)
 
-Auth --> GW: HTTP 403 Forbidden ("Truy cập bị từ chối: Hồ sơ thuộc quyền cơ sở khác")
-GW --> Staff: HTTP 403 Forbidden\n{error: "PERMISSION_DENIED", incident_id: "SEC-88219"}
-
+legend right
+  |= Lớp phòng thủ |= Cơ chế kỹ thuật hiện thực trong `src/core/` |
+  | Xác thực & Phân quyền | JWT HS256 (`jwtService.js`) + RBAC + Facility ABAC + Consent (`abacMiddleware.js`) |
+  | Bảo vệ dữ liệu lưu trữ | Mã hóa trường nhạy cảm `AES-256-GCM` (`encryptionService.js`) + Object Pre-signed URL (`labStorageService.js`) |
+  | Chống chối bỏ & Sửa log | SQLite Trigger cấm `UPDATE/DELETE` + Chuỗi băm `HMAC-SHA256` (`auditService.js`, `auditVerifier.js`) |
+endlegend
 @enduml

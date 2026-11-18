@@ -1,41 +1,54 @@
-@startuml C4_Component_ACL
+@startuml C4_Component_MediLink_Core
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
 LAYOUT_WITH_LEGEND()
 
-title Component Diagram [C4 Level 3] - Lớp Tích hợp Anti-Corruption Layer (ACL)
+title Component View [C4 Level 3] - Bên trong Container `medilink-core` (Modular Monolith + Hexagonal ACL)
 
-Container(booking_service, "Booking Core Service", "Domain Logic", "Điều phối đặt lịch hẹn, quản lý trạng thái slot khám.")
+Container_Boundary(core_boundary, "Container: medilink-core (src/core/)") {
 
-Container_Boundary(acl_boundary, "Anti-Corruption Layer (HIS Integration Engine)") {
-    Component(dispatcher, "HisIntegrationDispatcher", "TypeScript / Node.js", "Tiếp nhận booking, kiểm tra circuit health và điều phối tới Adapter thích hợp.")
-    Component(cb_manager, "CircuitBreakerManager", "Resilience Pattern", "Quản lý trạng thái Closed/Open/Half-Open cho từng cơ sở, timeout budget.")
-    Component(mapper, "CanonicalModelMapper", "Data Transformer", "Chuyển đổi thực thể nội bộ <-> Chuẩn HL7 FHIR (Appointment, Patient, Encounter).")
-    Component(factory, "HisAdapterFactory", "Creational Pattern", "Khởi tạo và cung cấp Adapter phù hợp dựa trên facility_id.")
+    Component(gateway_comp, "HTTP Router & Token Bucket Rate Limiter", "gateway/httpApp.js, rateLimiter.js", "Tiếp nhận HTTP request, gán X-Request-Id, giới hạn tốc độ Token Bucket chống spam F5 (Risk R-01).")
+    Component(auth_comp, "JWT Auth & Contextual ABAC Guard", "auth/jwtService.js, authMiddleware.js, abacMiddleware.js", "Xác thực chữ ký JWT HS256, kiểm tra RBAC, đối chiếu user.facility_id == record.facility_id và kiểm tra Patient Consent.")
 
-    ComponentInterface(i_adapter, "IHisIntegrationAdapter", "TypeScript Interface", "Hợp đồng giao tiếp chung: syncAppointment(), cancelAppointment(), checkHealth().")
+    Component(booking_comp, "Booking Domain Service", "booking/bookingService.js, slotCache.js", "Điều phối đặt/hủy lịch, Read-Through Slot Cache, ghi Outbox khi HIS lỗi và đẩy job thông báo.")
+    Component(lock_comp, "Concurrency & Idempotency Engine", "booking/lockManager.js, idempotencyManager.js", "Kiểm tra X-Idempotency-Key và cấp khóa phân tán Redis SET NX PX 3000 kèm Fencing Token.")
 
-    Component(danang_adapter, "DaNangHisJsonAdapter", "Adapter Implementation", "Chuyển đổi HL7 FHIR <-> REST JSON payload của HIS Đà Nẵng.")
-    Component(hue_adapter, "HueHisXmlAdapter", "Adapter Implementation", "Chuyển đổi HL7 FHIR <-> SOAP/XML envelope của HIS Huế.")
-    Component(quangnam_adapter, "QuangNamHisAdapter", "Adapter Implementation", "Chuyển đổi HL7 FHIR <-> REST payload của HIS Quảng Nam.")
+    Component(ehr_comp, "EHR & Crypto Storage Service", "ehr/ehrService.js, encryptionService.js, labStorageService.js", "Mã hóa/giải mã cấp trường AES-256-GCM, che dữ liệu nhạy cảm cho lễ tân và ký Pre-signed URL cho file PDF xét nghiệm.")
+    Component(audit_comp, "Append-Only Audit & HMAC Verifier", "audit/auditService.js, auditVerifier.js", "Tính chuỗi băm liên hoàn HMAC-SHA256 và đối soát phát hiện can thiệp trái phép từ Genesis block.")
+
+    Boundary(acl_box, "Anti-Corruption Layer (src/core/acl/)") {
+        Component(acl_disp, "HisIntegrationDispatcher", "acl/hisDispatcher.js", "Registry quản lý Adapter động theo facility_id (Open-Closed Principle cho ASR-04).")
+        Component(fhir_mapper, "CanonicalModelMapper (HL7 FHIR R4)", "acl/canonicalModel.js", "Chuẩn hóa dữ liệu nội bộ & MPI sang cặp tài nguyên chuẩn HL7 FHIR R4 Patient + Appointment.")
+        Component(cb_mgr, "Per-Facility CircuitBreaker", "acl/circuitBreaker.js", "Máy trạng thái CLOSED/OPEN/HALF_OPEN riêng cho từng cơ sở với Timeout Budget 1500ms.")
+        Component(adapters, "Pluggable HIS Adapters", "acl/adapters/*.js", "DaNangJsonAdapter, HueXmlAdapter, QuangNamCustomAdapter, FhirGenericAdapter (triển khai BaseHisAdapter).")
+    }
 }
 
-System_Ext(mock_danang, "Mock HIS Đà Nẵng", "Cổng REST JSON Service")
-System_Ext(mock_hue, "Mock HIS Huế", "Cổng SOAP XML Service")
-System_Ext(mock_quangnam, "Mock HIS Quảng Nam", "Cổng Custom REST Service")
+ContainerDb(redis, "Redis 7 Store", "TCP 6379")
+ContainerDb(sqlite, "SQLite 3 WAL RDBMS", "database.js")
+ContainerDb(lab_bucket, "Encrypted Lab Object Store", "File/S3 Bucket")
+System_Ext(his_all, "3+ Hệ thống HIS Cơ sở", "REST JSON / SOAP XML / Custom RPC / FHIR R4")
 
-Rel(booking_service, dispatcher, "dispatchSync(bookingData)", "Function Call")
-Rel(dispatcher, cb_manager, "isCircuitAvailable(facilityId)", "Function Call")
-Rel(dispatcher, mapper, "toFhirAppointment(bookingData)", "Function Call")
-Rel(dispatcher, factory, "getAdapter(facilityId)", "Function Call")
-Rel(factory, i_adapter, "Resolves", "Interface")
+Rel(gateway_comp, auth_comp, "Chuyển tiếp request cần bảo vệ", "In-process Middleware")
+Rel(gateway_comp, booking_comp, "POST /api/bookings, GET /api/slots", "In-process Call")
+Rel(auth_comp, ehr_comp, "Ủy quyền đọc EHR (kèm abacViewScope)", "In-process Call")
+Rel(auth_comp, audit_comp, "Ghi nhận vi phạm 401/403 tức thì", "In-process Call")
 
-i_adapter <|.. danang_adapter
-i_adapter <|.. hue_adapter
-i_adapter <|.. quangnam_adapter
+Rel(booking_comp, lock_comp, "1. Check Idempotency & Acquire Lock", "In-process Async")
+Rel(lock_comp, redis, "SET lock:slot NX PX 3000 & Lua Unlock", "RESP TCP")
+Rel(booking_comp, sqlite, "2. BEGIN IMMEDIATE + INSERT UNIQUE + Enqueue Outbox/Notif", "SQLite Binding")
+Rel(booking_comp, acl_disp, "3. Yêu cầu đồng bộ lịch sang HIS cơ sở", "In-process Async")
+Rel(booking_comp, audit_comp, "4. Ghi nhận sự kiện đặt/hủy lịch", "In-process Call")
 
-Rel(danang_adapter, mock_danang, "POST /api/appointments", "HTTP / JSON")
-Rel(hue_adapter, mock_hue, "POST /ws/appointmentService.asmx", "HTTP / SOAP XML")
-Rel(quangnam_adapter, mock_quangnam, "POST /his/v1/booking", "HTTP / JSON")
+Rel(acl_disp, fhir_mapper, "Ánh xạ sang FHIR Patient & Appointment", "In-process Call")
+Rel(acl_disp, cb_mgr, "Thực thi trong hàng rào Circuit Breaker", "In-process Async")
+Rel(cb_mgr, adapters, "Gọi syncAppointment(canonicalBundle, 1500ms)", "Interface IHisIntegrationAdapter")
+Rel(adapters, his_all, "Giao thức riêng từng cơ sở", "HTTP REST / SOAP XML")
 
+Rel(ehr_comp, sqlite, "Đọc/ghi bản mã AES-256-GCM", "SQLite Binding")
+Rel(ehr_comp, lab_bucket, "Đọc/ghi blob mã hóa & cấp Pre-signed URL", "File/Object API")
+Rel(ehr_comp, audit_comp, "Ghi vết đọc EHR & tải file xét nghiệm", "In-process Call")
+Rel(audit_comp, sqlite, "INSERT INTO audit_logs (Trigger chặn UPDATE/DELETE)", "SQLite Append-Only")
+
+SHOW_LEGEND()
 @enduml

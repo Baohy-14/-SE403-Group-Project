@@ -1,113 +1,93 @@
-# Slide Thuyết trình Bảo vệ Đồ án: Nền tảng MediLink (20 Phút)
+# Đề cương Slide Bảo vệ Đồ án Cuối kỳ M5 – Nền tảng MediLink (20 Phút)
 
-**Môn học:** CMUSE 403 – Software Architecture & Design  
-**Đề tài:** Đề tài 1 – MediLink: Nền tảng Đặt lịch khám và Hồ sơ Sức khỏe Điện tử  
-**Nhóm sinh viên thực hiện:**
-- Nguyễn Đức Bảo Hy (Lead Architect)
-- Lê Viết Nghĩa (Requirements & Documentation Owner)
-- Trần Tiến Danh (Prototype Lead)
-- Nguyễn Quang Trường (QA/Test Lead)
+- **Môn học:** SE 403 – Thiết kế Kiến trúc Phần mềm (*Software Architecture & Design*)
+- **Giảng viên chấm & vấn đáp:** TS. Nguyễn Đức Mận (`@ManNguyen`)
+- **Tổng thời lượng:** **20 phút** (*14 phút thuyết trình chia đều 4 thành viên + 6 phút Live Demo thực nghiệm*) + **Phiên Vấn đáp Q&A**
 
 ---
 
-## Slide 1: Trang bìa (Title Slide)
-- **Tiêu đề:** MEDILINK – NỀN TẢNG ĐẶT LỊCH KHÁM VÀ HỒ SƠ SỨC KHỎE ĐIỆN TỬ
-- **Phụ đề:** Kiến trúc Tích hợp Hệ thống Y tế Dị thể, Chống Trùng lịch và Bảo mật theo Nghị định 13/2023/NĐ-CP
-- **Người trình bày:** Nguyễn Đức Bảo Hy, Lê Viết Nghĩa, Trần Tiến Danh, Nguyễn Quang Trường
-- **Giảng viên hướng dẫn:** ThS. Nguyễn Văn Mẫn
+## Bảng Phân chia Thời lượng Trình bày Giữa 4 Thành viên
+
+| Thứ tự | Người trình bày | Slides phụ trách | Thời lượng | Nội dung trọng tâm |
+|:------:|-----------------|:----------------:|:----------:|--------------------|
+| **Phần 1** | **Lê Viết Nghĩa** (*Req & Doc Owner*) | Slide 1 → Slide 4 | **3.5 phút** | Bối cảnh chuỗi 12 phòng khám, Business Goals, phân tích Nghị định 13/2023/NĐ-CP và 5 ràng buộc kỹ thuật. |
+| **Phần 2** | **Nguyễn Đức Bảo Hy** (*Lead Architect*) | Slide 5 → Slide 9 | **4.5 phút** | Utility Tree, 4 ASR `(H, H)`, lựa chọn Tactics/Style (`ADR-001`..`007`), sơ đồ C4/Deployment và nâng cấp ATAM từ v1 lên v2. |
+| **Phần 3** | **Trần Tiến Danh** (*Prototype Lead*) | Slide 10 → Slide 11 + **Live Demo** | **6.0 phút** | Ánh xạ 1:1 từ C4 sang mã nguồn `src/` & `docker-compose.yml`; chạy trực tiếp kịch bản Concurrency, tắt HIS Huế và kiểm tra bản mã SQLite. |
+| **Phần 4** | **Nguyễn Quang Trường** (*QA/Test Lead*) | Slide 12 → Slide 15 | **4.0 phút** | Cơ sở tính toán Response Measure, phân tích số liệu đo thật trên phần cứng nhóm, bài học kinh nghiệm và tổng kết. |
 
 ---
 
-## Slide 2: Bối cảnh và Nỗi đau Doanh nghiệp (Problem Statement)
-- Chuỗi 12 phòng khám tư nhân tại Đà Nẵng, Huế, Quảng Nam.
-- Quản lý thủ công qua điện thoại & Excel -> Thường xuyên xảy ra đặt trùng lịch (double-booking).
-- Hệ thống HIS không đồng nhất:
-  - Cơ sở Đà Nẵng: REST/JSON hiện đại.
-  - Cơ sở Huế: SOAP/XML di sản cũ.
-  - Cơ sở Quảng Nam: Custom Database/REST.
-- Sự cố mất mạng hoặc sập máy chủ tại 1 cơ sở gây tê liệt dây chuyền.
-- Nguy cơ lộ lọt hồ sơ y tế cá nhân (vi phạm Nghị định 13/2023/NĐ-CP).
+## Nội dung Chi tiết Từng Slide
 
----
+### Slide 1 – Trang bìa (*Lê Viết Nghĩa*)
+- **Tiêu đề:** MEDILINK – KIẾN TRÚC NỀN TẢNG ĐẶT LỊCH KHÁM & HỒ SƠ SỨC KHỎE ĐIỆN TỬ ĐA CƠ SỞ
+- **Môn học:** SE 403 – Thiết kế Kiến trúc Phần mềm | **GVHD:** TS. Nguyễn Đức Mận
+- **Nhóm thực hiện:** Trần Tiến Danh – Lê Viết Nghĩa – Nguyễn Đức Bảo Hy – Nguyễn Quang Trường
 
-## Slide 3: Mục tiêu Kinh doanh & Ràng buộc Pháp lý
-- **Mục tiêu Kinh doanh (KPIs):**
-  - Chuyển đổi số ≥ 60% lượt đặt lịch online; xác nhận < 10 giây.
-  - Tỷ lệ double-booking: **0.00%**.
-  - Tính sẵn sàng (Availability): **≥ 99.5%** trong giờ làm việc.
-  - Tích hợp HIS mới: **≤ 2 tuần công** không sửa Core.
-- **Ràng buộc Pháp lý (Nghị định 13/2023/NĐ-CP):**
-  - Mã hóa đa tầng (TLS 1.3 và AES-256 lưu trữ).
-  - Phân quyền theo ngữ cảnh cơ sở (Contextual ABAC): Lễ tân cơ sở này tuyệt đối không xem bệnh án cơ sở khác.
-  - Nhật ký kiểm toán bất biến (Append-only Audit Log) được bảo vệ bằng mã băm liên hoàn HMAC.
+### Slide 2 – Bối cảnh Bài toán & Vì sao Không phải CRUD Thông thường (*Lê Viết Nghĩa*)
+- Chuỗi **12 phòng khám** tại Đà Nẵng (5), Huế (4), Quảng Nam (3) đang đặt lịch qua điện thoại/Excel → trùng lịch ~4.5%.
+- **3 hệ thống HIS di sản dị thể** không cho phép sửa DB: REST/JSON (UUID), SOAP 1.1/XML (`HUE-BN-xxx`), Custom RPC (`ma_bn_noi_bo` số nguyên).
+- Đứt mạng 2 giờ ở 1 chi nhánh dễ kéo treo toàn chuỗi; dữ liệu bệnh án nhạy cảm chịu chế tài nghiêm khắc của **Nghị định 13/2023/NĐ-CP**.
 
----
+### Slide 3 – Business Goals & Hóa giải Xung đột Stakeholders (*Lê Viết Nghĩa*)
+- **KPI cốt lõi:** `Double-booking = 0.00%`; `Availability ≥ 99.5%` giờ làm việc; tích hợp HIS thứ 4 `≤ 2 tuần công`; `0` vi phạm dữ liệu cá nhân.
+- **Xung đột chính:** Bác sĩ cần mở bệnh sử liên cơ sở tức thì **↔** Pháp luật đòi hỏi Consent, phân quyền cơ sở và mã hóa nhiều lớp.
 
-## Slide 4: Bảng Cây Tiện ích & Các Yêu cầu Kiến trúc Cốt lõi (ASR)
-- **ASR-01 (Consistency & Concurrency):** 50 người cùng đặt 1 slot -> Đúng 1 người được duyệt, double-booking = 0, p95 < 800ms.
-- **ASR-02 (Availability & Fault Tolerance):** HIS Huế sập 2 giờ -> 11 cơ sở khác vẫn đặt bình thường 100%, Circuit Breaker ngắt mạch fast-fail.
-- **ASR-03 (Security & Contextual ABAC):** Lễ tân Đà Nẵng xem hồ sơ bệnh án tại Huế -> Bị chặn đứng 403 Forbidden, dữ liệu rò rỉ 0%, ghi audit log.
-- **ASR-04 (Modifiability & Interoperability):** Tích hợp HIS thứ 4 trong ≤ 2 tuần công mà không sửa đổi mã nguồn Core.
+### Slide 4 – Phân loại Dữ liệu & 5 Constraints từ Nghị định 13/2023/NĐ-CP (*Lê Viết Nghĩa*)
+- Bảng 3 mức: *Công khai* → *Cá nhân cơ bản* → *Cá nhân nhạy cảm sức khỏe (Điều 2 NĐ 13)*.
+- **5 Ràng buộc kỹ thuật (`C-01` → `C-05`):** Bảng `patient_consents` tường minh; mã hóa cấp trường `AES-256-GCM` tách khóa; ABAC theo `facility_id` + che `[REDACTED]` với lễ tân; Object Storage + Pre-signed URL 120s cho file PDF; Audit Log chỉ ghi thêm (Trigger + HMAC).
 
----
+### Slide 5 – Nguồn gốc Con số Định lượng & Utility Tree (*Nguyễn Đức Bảo Hy*)
+- Quy mô 120 bác sĩ (`1.920 slot/ngày`, `420 giờ làm việc/tháng` → `99.5%` chỉ cho phép tối đa `2.1 giờ` gián đoạn/tháng).
+- Chọn **4 ASR cốt lõi hạng `(H, H)`:**
+  - `ASR-01`: 50 người tranh 1 slot → đúng 1 `201`, 49 `409`, `p95 ≤ 500 ms`.
+  - `ASR-02`: HIS Huế sập 2 giờ → ĐN & QN `100%` OK, Huế phản hồi Outbox `≤ 50 ms`.
+  - `ASR-03`: Lễ tân xem chéo cơ sở → chặn `403 ≤ 50 ms`, `0 byte` lộ, ghi Audit `100%`.
+  - `ASR-04`: Cắm thêm HIS thứ 4 `≤ 10 ngày công`, sửa `0 dòng` Core.
 
-## Slide 5: Lựa chọn Tactics Kiến trúc (Bass et al.)
-- **Consistency:** Redis Distributed Lock (Redlock algorithm) + Idempotency Key + RDBMS Unique Constraint.
-- **Availability:** Circuit Breaker (Closed, Open, Half-Open) + Bulkhead Isolation + Graceful Degradation.
-- **Security:** Hybrid Access Control (RBAC + Contextual ABAC Policy Engine) + Cryptographic HMAC Hash Chaining.
-- **Modifiability:** Anti-Corruption Layer (ACL) + Adapter Pattern + Canonical Data Model chuẩn HL7 FHIR Release 4.
+### Slide 6 – Biện luận Phong cách Kiến trúc Tổng thể (`ADR-001`) (*Nguyễn Đức Bảo Hy*)
+- Bảng đối chiếu có trọng số: Layered Monolith (`2.98`) vs Microservices tách từng HIS (`3.38`) vs **Modular Monolith + Hexagonal + `medilink-worker` tách rời (`4.81`)**.
+- Tránh bẫy "vẽ mỗi HIS thành 1 microservice không lý do": Adapter in-process bọc `CircuitBreaker` + Worker nền vừa cô lập lỗi hoàn hảo, vừa chạy nhẹ `< 250 MB RAM` cho nhóm 4 người.
 
----
+### Slide 7 – Chống Double-Booking 3 Lớp (`ADR-003`) & Tích hợp ACL FHIR (`ADR-002`) (*Nguyễn Đức Bảo Hy*)
+- So sánh 4 cơ chế khóa → Chọn phòng thủ 3 lớp: `X-Idempotency-Key` → `Redis SET NX PX 3000 + Fencing Token` (**nhả khóa ngay sau khi ghi DB, không giữ khóa chờ mạng HIS!**) → `SQLite UNIQUE(active_slot_key)`.
+- Lớp **ACL + HL7 FHIR R4 (`Patient` kèm bảng `MPI`, `Appointment`)**: So sánh rõ vì sao vượt trội hơn *Adapter-per-HIS không có Canonical Model*.
 
-## Slide 6: Biện luận Phong cách Kiến trúc Tổng thể (ADR-001)
-- **So sánh 3 phương án:** Monolith truyền thống vs Microservices thuần túy vs **Modular Monolith + Hexagonal Architecture**.
-- **Lý do chọn Modular Monolith:**
-  - Đảm bảo tính nhất quán mạnh (Strict Consistency) chống race condition hiệu quả nhất.
-  - Chi phí vận hành tối ưu cho nhóm 4 người trong 15 tuần.
-  - Đóng gói và kiểm thử độc lập nhanh chóng (1 lệnh `docker compose up`).
-  - Phân tách ranh giới module rõ ràng, sẵn sàng phân rã sang Microservices khi mở rộng quy mô trong tương lai.
+### Slide 8 – Sơ đồ C4 Container, Component & Deployment View (*Nguyễn Đức Bảo Hy*)
+- Trình chiếu sơ đồ Container & Deployment gồm 6 containers trên 3 mạng Docker (`app-net`, `data-net` với `internal: true`, `his-net`), chỉ rõ **Trust Boundaries**.
 
----
+### Slide 9 – Đánh giá ATAM & Tiến hóa lên Architecture v2 (`ADR-007`) (*Nguyễn Đức Bảo Hy*)
+- 3 rủi ro phát hiện ở v1 và cách giải quyết dứt điểm ở v2:
+  1. `Risk R-01` (Giữ khóa lâu & spam F5) → Nhả khóa sớm + `Fencing Token` + `TokenBucketRateLimiter`.
+  2. `Risk R-02` (*Thundering Herd* khi HIS Huế hồi phục) → Đổi `ADR-002` sang *Partially Superseded*, ban hành `ADR-007` với `Transactional Outbox + Random Jitter`.
+  3. `Risk R-03` (Lộ bệnh án cùng cơ sở & DBA sửa log) → Masking `[REDACTED]`, bảng `patient_consents`, SQL Trigger + `AuditIntegrityWorker`.
 
-## Slide 7: Sơ đồ Ngữ cảnh C4 Level 1 & Container C4 Level 2
-- Trình bày ranh giới an toàn (Trust Boundary).
-- Phân tầng Container:
-  - Frontend SPA & Mobile App.
-  - API Gateway & Reverse Proxy (Rate Limiting).
-  - MediLink Core Application (Auth ABAC, Booking Core, EHR, ACL Engine).
-  - In-memory Store (Redis Lock) & Relational DB & Encrypted Audit Table.
-  - 3 Mock HIS ngoài.
+### Slide 10 – Ánh xạ 1:1 từ Sơ đồ Kiến trúc sang Mã nguồn Prototype (*Trần Tiến Danh*)
+- Sơ đồ cây thư mục `src/{core, worker, mock-his, tests}` viết bằng Node.js 22 chuẩn (`node:sqlite`, `node:crypto`, `node:net`), 100% thành viên đọc hiểu từng hàm.
 
----
+### Slide 11 – Kịch bản Live Demo Trực tiếp 4 Phút (*Trần Tiến Danh*)
+1. Chạy lệnh `node --no-warnings src/tests/run_all_verification_tests.js` trực tiếp trên máy thuyết trình.
+2. Trình chiếu log trực quan 6 thí nghiệm:
+   - 50 requests bắn song song → `1` mã `201`, `49` mã `409`.
+   - Ngắt `mock-his-hue` → mạch Huế nhảy sang `OPEN`, Đà Nẵng & Quảng Nam vẫn `SYNCED`, bật lại Huế → Outbox đồng bộ bù `4/4`.
+   - In dòng thô từ SQLite `medical_records` cho thấy chuỗi mã hóa `enc:v1:...` và demo `AuditVerifier` bắt sống dòng log `#1` bị sửa!
 
-## Slide 8: Trái tim Kiến trúc: Lớp Chống Thối rữa (Anti-Corruption Layer - C4 Level 3)
-- Cơ chế hoạt động của `HisIntegrationDispatcher`.
-- Chuẩn hóa trung gian qua Mô hình Chuẩn **HL7 FHIR R4 (Appointment & Patient)**.
-- Quản lý trạng thái Circuit Breaker riêng biệt cho từng cơ sở.
-- Các Adapter độc lập: `DaNangHisJsonAdapter`, `HueHisXmlAdapter`, `QuangNamHisAdapter`.
+### Slide 12 – Bảng Kết quả Đo lường Thực nghiệm trên Phần cứng Nhóm (*Nguyễn Quang Trường*)
+- Nêu rõ cấu hình máy đo: `Intel Core i3-1005G1 @ 1.20GHz (4 vCPU), 3.79 GB RAM, Windows 11, Node v22.15.0`.
+- Đối chiếu SLA vs Thực đo:
+  - `ASR-01`: `p95 = 142.16 ms` (SLA `≤ 500 ms`), `0.00%` double-booking.
+  - `ASR-02`: Fast-fail Outbox `7.38 ms` (SLA `≤ 50 ms`), hồi phục `4/4`.
+  - `ASR-03`: Chặn `403` trong `2.37 ms`.
+  - `QAS-05`: Phát hiện sửa log trong `0.395 ms`.
+  - `QAS-06`: 200 reads đạt `683 req/s`, `p95 = 258.50 ms` (câu chuyện thật tối ưu từ `301.93 ms` nhờ thêm `SlotReadCache`!).
 
----
+### Slide 13 – Minh bạch Sử dụng AI (`ai-log.md`) (*Nguyễn Quang Trường*)
+- Trình bày quy tắc **"3 câu hỏi"** nhóm áp dụng nghiêm ngặt trước khi giữ bất kỳ gợi ý nào từ AI và các ví dụ cụ thể nhóm đã bác bỏ/chỉnh sửa đề xuất của AI (như bỏ Microservices tách từng HIS, sửa lỗi giữ khóa khi gọi mạng, sửa lỗi lấy `facility_id` từ client).
 
-## Slide 9: Đánh giá Kiến trúc (ATAM) & Cải tiến lên Architecture v2
-- **3 Rủi ro kiến trúc phát hiện qua ATAM:**
-  1. Rủi ro spam request / quá tải Redis Lock -> **Cải tiến v2:** Bổ sung Token Bucket Rate Limiting tại Gateway.
-  2. Rủi ro sập dây chuyền (Thundering Herd) khi HIS phục hồi -> **Cải tiến v2:** Transactional Outbox với Rate-Controlled Sync & Jitter.
-  3. Rủi ro can thiệp sửa đổi trái phép nhật ký kiểm toán trong DB -> **Cải tiến v2:** Tiến trình tự động xác thực chuỗi băm HMAC `AuditIntegrityVerifier`.
+### Slide 14 – Bài học Kinh nghiệm & Hướng Mở rộng Khi Tải Tăng 10 Lần (*Nguyễn Quang Trường*)
+- Nếu làm lại từ đầu: Đưa `Transactional Outbox` và `Contract Testing` vào ngay từ M2.
+- Lộ trình mở rộng 10x (120 phòng khám): Chuyển SQLite sang PostgreSQL Primary/Replicas, bật cụm Redis Sentinel và tách riêng module `acl` thành dịch vụ độc lập.
 
----
-
-## Slide 10: Minh chứng Thực nghiệm Prototype (Live Metrics Demo)
-- Trình chiếu video hoặc terminal chạy lệnh: `node tests/run_all_verification_tests.js`.
-- **Số liệu thực tế đo lường:**
-  - Concurrency 50 requests: **Đúng 1 thành công, 49 rejected (409 Conflict), Double-booking = 0.00%, p95 = 388ms**.
-  - Fault injection HIS Huế sập: **Đà Nẵng & Quảng Nam 100% OK, Circuit Breaker Huế chuyển sang OPEN**.
-  - Security check: **Chặn 403 Forbidden, 0% rò rỉ, Audit Log ghi nhận kèm mã băm HMAC**.
-  - Tamper detection: **Phát hiện ngay lập tức bản ghi bị can thiệp trái phép (< 2ms)**.
-  - Extensibility: **Tích hợp HIS thứ 4 chuẩn HL7 FHIR, sửa Core Domain: 0 dòng code**.
-
----
-
-## Slide 11: Kết luận & Đóng góp Thành viên
-- Đề tài đã hoàn thành xuất sắc 100% các yêu cầu từ M1 đến M5.
-- Đạt chuẩn kiến trúc y tế chuẩn hóa quốc tế (HL7 FHIR) và pháp lý Việt Nam (Nghị định 13/2023/NĐ-CP).
-- Phân công đồng đều 4 thành viên (mỗi thành viên đóng góp 25%), toàn đội sẵn sàng bước vào phần Vấn đáp Q&A!
+### Slide 15 – Tổng kết & Sẵn sàng Vấn đáp (*Cả nhóm*)
+- Hoàn thành đầy đủ 15 bước qua 5 mốc (M1 → M5), đồng bộ 100% giữa Tài liệu – Sơ đồ – ADR – Prototype – Số đo thực tế.
+- Mời Giảng viên đặt câu hỏi vấn đáp bất kỳ cho từng thành viên!

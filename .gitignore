@@ -1,15 +1,9 @@
-# Node dependencies
 node_modules/
-src/node_modules/
-package-lock.json
-src/package-lock.json
-
-# Logs & temp files
-*.log
-npm-debug.log*
+.runtime_storage/
+*.sqlite
+*.db
+*.db-wal
+*.db-shm
+~$*.docx
 .DS_Store
-Thumbs.db
-
-# Environment variables
 .env
-.env.local

@@ -1,62 +1,76 @@
-@startuml Sequence_Booking_Concurrency
+@startuml Sequence_Booking_Concurrency_MediLink
 autonumber
-skinparam style strictuml
-skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 220
 
-title Sequence Diagram: Luồng Đặt lịch Chống Double-Booking (ASR-01)
+title Sequence Diagram 1 (ASR-01 & ASR-02): Chống Double-Booking Đa tầng & Cách ly Lỗi HIS qua Outbox
 
-actor "Bệnh nhân 1\n(Client A)" as P1
-actor "Bệnh nhân 2\n(Client B)" as P2
-participant "API Gateway\n(Rate Limit & Auth)" as GW
-participant "Booking Service\n(Domain Core)" as Core
-participant "Redis Store\n(Distributed Lock)" as Redis
-participant "Database\n(Unique Constraint)" as DB
-participant "Anti-Corruption\nLayer (ACL)" as ACL
-participant "Mock HIS\n(Phòng khám)" as HIS
+actor "Bệnh nhân A\n(Đến trước)" as P1
+actor "Bệnh nhân B\n(Đến cùng lúc +2ms)" as P2
+participant "Gateway &\nRate Limiter" as GW
+participant "BookingService &\nIdempotency" as BS
+participant "LockManager\n(Redis SET NX PX)" as LOCK
+database "SQLite WAL DB\n(UNIQUE Constraint)" as DB
+participant "ACL Dispatcher &\nCircuitBreaker" as ACL
+participant "Mock HIS Cơ sở\n(REST / SOAP XML)" as HIS
+participant "BackgroundWorker\n(Outbox & Queue)" as WORKER
 
-Note over P1, P2: 50 Bệnh nhân cùng chọn: Bác sĩ Nguyễn Văn A, Khung giờ 08:00 - 08:30
+== Tranh chấp đồng thời cùng 1 khung giờ (DOC_101 @ 08:00) ==
+P1 -> GW: POST /api/bookings (doc=DOC_101, slot=08:00, X-Idempotency-Key=K1)
+P2 -> GW: POST /api/bookings (doc=DOC_101, slot=08:00, X-Idempotency-Key=K2)
 
-P1 -> GW: POST /api/bookings {doctor_id: 101, slot: "08:00", idemp_key: "K-01"}
-P2 -> GW: POST /api/bookings {doctor_id: 101, slot: "08:00", idemp_key: "K-02"}
+GW -> BS: createBooking(reqA, K1)
+GW -> BS: createBooking(reqB, K2)
 
-GW -> Core: Forward Request 1
-GW -> Core: Forward Request 2
+BS -> DB: Kiểm tra idempotency_keys(K1) -> Chưa tồn tại
+BS -> LOCK: INCR fencing_seq & SET lock:slot:DOC_101:08:00 "reqA:41" NX PX 3000
+LOCK --> BS: OK (Acquired, fencingToken = 41)
 
-group #LightCyan Bước 1: Tranh chấp Khóa Phân tán (Distributed Lock)
-    Core -> Redis: SET lock:slot:101:0800 "LOCKED" NX PX 3000 (Req 1)
-    activate Redis
-    Redis --> Core: OK (Acquired Lock thành công)
-    deactivate Redis
+BS -> LOCK: SET lock:slot:DOC_101:08:00 "reqB:42" NX PX 3000
+LOCK --> BS: NULL (Lock đang bị giữ bởi reqA)
+BS --> GW: HTTP 409 Conflict (SLOT_LOCKED_CONCURRENT_CONFLICT - Fast-fail < 10ms)
+GW --> P2: 409 Conflict ("Khung giờ đang có người giữ chỗ, gợi ý slot 08:30")
 
-    Core -> Redis: SET lock:slot:101:0800 "LOCKED" NX PX 3000 (Req 2)
-    activate Redis
-    Redis --> Core: NULL (Thất bại - Slot đang bị khóa)
-    deactivate Redis
+== Ghi nhận nguyên tử tại RDBMS & Nhả khóa sớm (Không giữ khóa khi chờ mạng HIS) ==
+BS -> DB: BEGIN IMMEDIATE; INSERT bookings (UNIQUE active_slot_key, fencing=41); UPDATE slots='BOOKED'; COMMIT
+DB --> BS: Commit thành công (bookingId = BK-9001)
+BS -> LOCK: EVAL Lua Atomic Unlock (chỉ xóa nếu value == "reqA:41")
+LOCK --> BS: 1 (Released)
+
+== Liên thông HIS qua Anti-Corruption Layer (Chuẩn HL7 FHIR Patient + Appointment) ==
+BS -> ACL: syncAppointment(facilityId, payload + MPI)
+ACL -> ACL: Map sang HL7 FHIR R4 {Patient, Appointment} & kiểm tra CircuitBreaker
+
+alt HIS Cơ sở hoạt động bình thường (Circuit CLOSED)
+    ACL -> HIS: POST Appointment (Timeout Budget = 1500ms, X-Idempotency-Key=K1)
+    HIS --> ACL: 201 Created (hisReferenceCode = "DN-HIS-1001")
+    ACL --> BS: { success: true, hisReferenceCode: "DN-HIS-1001" }
+    BS -> DB: UPDATE bookings SET his_sync_status = 'SYNCED'
+else HIS Cơ sở Huế bị sập hoặc Timeout > 1500ms (ASR-02 & ADR-007)
+    ACL -x HIS: 503 Service Unavailable / Timeout (hoặc Fast-fail ngay nếu Circuit = OPEN)
+    ACL --> BS: Throw Error (Tăng failureCount -> Mở mạch OPEN khi >= 3 lỗi)
+    BS -> DB: INSERT INTO outbox_events(BK-9001, 'PENDING') & SET his_sync_status = 'OUTBOX_QUEUED'
 end
 
-group #MistyRose Bước 2: Từ chối tức thì Request 2 (Fast-Fail)
-    Core --> GW: 409 Conflict ("Khung giờ đang có người giữ hoặc đã hết chỗ")
-    GW --> P2: 409 Conflict (Gợi ý slot 08:30 hoặc 09:00)
+BS -> DB: INSERT INTO notification_jobs(ZALO_ZNS_SMS) & INSERT INTO audit_logs(HMAC-SHA256)
+BS -> DB: Lưu kết quả vào idempotency_keys(K1)
+BS --> GW: HTTP 201 Created (Booking Confirmed)
+GW --> P1: 201 Created (Trả mã lịch hẹn ngay, không chờ cổng SMS/HIS treo)
+
+== Phục hồi tự động ở chế độ nền (Architecture v2 Rate-Controlled Outbox) ==
+loop Định kỳ khi Circuit chuyển HALF_OPEN / CLOSED
+    WORKER -> DB: SELECT pending outbox_events (Batch = 5)
+    WORKER -> WORKER: Sleep Jitter ngẫu nhiên (20..60ms) chống Thundering Herd
+    WORKER -> ACL: syncAppointment(BK-9001)
+    ACL -> HIS: POST SOAP/REST (kèm IdempotencyToken chống ghi trùng)
+    HIS --> ACL: 200 OK (MaTiepDonHue = "HUE-XML-2001")
+    WORKER -> DB: UPDATE outbox_events='SYNCED', bookings.his_sync_status='SYNCED'
 end
 
-group #Honeydew Bước 3: Hoàn tất Đặt lịch cho Request 1
-    Core -> DB: SELECT status FROM appointment_slots WHERE doctor_id=101 AND slot="08:00"
-    DB --> Core: Status = "AVAILABLE"
-
-    Core -> DB: INSERT INTO bookings (id, doctor_id, slot, status) VALUES (...)
-    note right of DB: Ràng buộc UNIQUE(doctor_id, slot) bảo vệ tầng DB
-    DB --> Core: Insert Confirmed (Booking ID = 9901)
-
-    Core -> ACL: dispatchSyncBooking(facility_id, bookingData)
-    activate ACL
-    ACL -> HIS: POST /api/appointments [REST/JSON hoặc SOAP/XML]
-    HIS --> ACL: 200 OK (Mã tiếp đón: "HIS-DN-8812")
-    ACL --> Core: Sync Success
-    deactivate ACL
-
-    Core -> Redis: DEL lock:slot:101:0800 (Giải phóng khóa)
-    Core --> GW: 201 Created {booking_id: 9901, status: "CONFIRMED"}
-    GW --> P1: 201 Created (Đặt lịch thành công, mã QR check-in)
-end
-
+legend right
+  |= Ký hiệu |= Ý nghĩa kiến trúc |
+  | Đồng bộ (Mũi tên liền) | Luồng HTTP/SQLite/Redis trong phạm vi Request (< 150ms) |
+  | Bất đồng bộ (Worker Loop) | Luồng Outbox & Notification tách rời, chịu lỗi độc lập |
+  | Chốt chặn 3 lớp | Idempotency Key -> Redis Lock + Fencing -> SQLite UNIQUE |
+endlegend
 @enduml

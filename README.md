@@ -1,121 +1,98 @@
-# MediLink – Nền Tảng Đặt Lịch Khám & Hồ Sơ Sức Khỏe Điện Tử
+# MediLink – Nền tảng Đặt lịch khám & Hồ sơ Sức khỏe Điện tử Đa cơ sở
 
-> **Đồ án môn học CMUSE 403 – Software Architecture & Design**  
-> **Đề tài 1:** MediLink Platform – Tích hợp hệ thống quản lý phòng khám (HIS) dị thể cho chuỗi 12 phòng khám tại Đà Nẵng, Huế và Quảng Nam.
-
----
-
-## 1. Thành viên Nhóm & Phân vai (4 Thành viên)
-
-| STT | Họ và Tên | Vai trò chính | Trách nhiệm cốt lõi |
-|:---:|-----------|---------------|---------------------|
-| 1 | **Nguyễn Đức Bảo Hy** | Kiến trúc sư trưởng (*Lead Architect*) | Chủ trì phân tích ASR, lựa chọn Tactics, thiết kế C4 Views, chủ trì đánh giá ATAM và phê duyệt ADR. |
-| 2 | **Lê Viết Nghĩa** | Phụ trách Yêu cầu & Tài liệu (*Requirements & Documentation Owner*) | Phân tích bài toán chuỗi 12 phòng khám, ràng buộc Nghị định 13/2023/NĐ-CP, quản lý SAD và AI Log. |
-| 3 | **Trần Tiến Danh** | Phụ trách Prototype (*Prototype Lead*) | Xây dựng mã nguồn khung (Skeleton), Anti-Corruption Layer, Adapters cho 3 HIS, Distributed Lock và Docker hóa. |
-| 4 | **Nguyễn Quang Trường** | Phụ trách QA/Test (*QA/Test Lead*) | Xây dựng kịch bản kiểm thử Quality Attributes, viết test scripts giả lập tải 50 requests, fault injection, security ABAC test. |
+> **Đồ án Môn học SE 403 – Thiết kế Kiến trúc Phần mềm (*Software Architecture & Design*)**  
+> **Giảng viên hướng dẫn:** TS. Nguyễn Đức Mận (`@ManNguyen`)  
+> **Đề tài 1:** Thiết kế kiến trúc & hiện thực Prototype nền tảng đặt lịch khám chống trùng, liên thông 3 hệ thống HIS dị thể và bảo mật dữ liệu y tế theo **Nghị định 13/2023/NĐ-CP** cho chuỗi 12 phòng khám tại Đà Nẵng, Huế và Quảng Nam.
 
 ---
 
-## 2. Bản đồ Tài liệu & Sản phẩm Bàn giao theo 5 Mốc (M1 – M5)
+## 1. Thành viên Nhóm & Phân vai Thực hiện
 
-Toàn bộ sản phẩm bàn giao được tổ chức khoa học theo đúng cấu trúc yêu cầu của môn học:
-
-```
-├── ai-log.md                            # [BẮT BUỘC] Nhật ký sử dụng AI đầy đủ 6 cột theo quy định
-├── README.md                            # Hướng dẫn tổng quan và hướng dẫn chạy hệ thống
-├── docker-compose.yml                   # Cấu hình khởi chạy toàn bộ hệ thống bằng 1 lệnh
-├── docs/
-│   ├── stage-0.md                       # Giai đoạn 0: Khởi động, phân vai, 5 câu tóm tắt & giả định
-│   ├── m1-architectural-drivers.md      # Mốc M1: Business Goals, Stakeholders, Use Cases, 6 QA Scenarios, Utility Tree
-│   ├── m2-architecture-design.md        # Mốc M2: Tactics, Trade-offs, C4 Views & Sequence Diagrams
-│   ├── m3-architecture-evaluation.md    # Mốc M3: Đánh giá ATAM rút gọn, Sensitivity/Trade-offs/Risks & Thiết kế v2
-│   ├── m4-prototype-verification.md     # Mốc M4: Báo cáo kiểm chứng thực nghiệm, số liệu đo lường thực tế
-│   ├── SAD.md                           # Mốc M5: Software Architecture Document hoàn chỉnh theo chuẩn ISO/IEC 42010
-│   ├── presentation-slides.md           # Mốc M5: Đề cương slide bảo vệ đồ án 20 phút
-│   └── qa-interview-prep.md             # Mốc M5: Bộ câu hỏi & đáp án luyện vấn đáp theo 6 cấp độ Bloom
-├── diagrams/
-│   ├── c4-context.puml                  # Sơ đồ C4 Level 1: System Context Diagram (kèm Trust Boundary)
-│   ├── c4-container.puml                # Sơ đồ C4 Level 2: Container Diagram
-│   ├── c4-component-acl.puml            # Sơ đồ C4 Level 3: Component Diagram (Anti-Corruption Layer)
-│   ├── deployment-view.puml             # Sơ đồ Khung nhìn Triển khai (Deployment View)
-│   ├── sequence-booking-concurrency.puml# Sơ đồ Tuần tự: Chống đặt trùng lịch (ASR-01)
-│   └── sequence-security-audit.puml     # Sơ đồ Tuần tự: Phân quyền ABAC & Nhật ký kiểm toán HMAC (ASR-03 & ASR-05)
-├── adr/
-│   ├── 0001-architectural-style.md      # ADR-001: Lựa chọn Modular Monolith + Hexagonal Architecture
-│   ├── 0002-his-integration-acl-canonical-model.md # ADR-002: Tích hợp HIS qua ACL & Mô hình Chuẩn HL7 FHIR
-│   ├── 0003-concurrency-distributed-locking-idempotency.md # ADR-003: Chống double-booking qua Redis Lock & Idempotency
-│   ├── 0004-security-rbac-facility-scope-immutable-audit.md # ADR-004: Phân quyền Contextual ABAC & Audit Log bất biến
-│   └── 0005-asynchronous-notification-queue.md # ADR-005: Xử lý tác vụ nền & thông báo bất đồng bộ qua Redis BullMQ
-└── src/                                 # Mã nguồn Prototype hoàn chỉnh
-    ├── core/                            # MediLink Backend Core (Node.js Express)
-    │   ├── server.js                    # Server chính & Ingress Rate Limiter (Token Bucket)
-    │   ├── config.js                    # Cấu hình hệ thống & biến môi trường
-    │   ├── db/database.js               # Database Engine nội bộ có ràng buộc UNIQUE slot
-    │   ├── auth/                        # RBAC & Contextual ABAC Middleware (facility_id scoping)
-    │   ├── booking/                     # Booking Service, Redis Lock Manager, Idempotency Manager
-    │   ├── ehr/                         # EHR Service quản lý hồ sơ bệnh án nhạy cảm
-    │   ├── audit/                       # Audit Service & Audit Chain Integrity Verifier (HMAC-SHA256)
-    │   └── acl/                         # Anti-Corruption Layer, Canonical Mapper, Circuit Breaker & Adapters
-    ├── mock-his/                        # 3 Máy chủ Giả lập HIS độc lập
-    │   ├── hisDaNangServer.js           # Mock HIS Đà Nẵng (REST / JSON - Port 8001)
-    │   ├── hisHueServer.js              # Mock HIS Huế (Legacy SOAP / XML - Port 8002)
-    │   └── hisQuangNamServer.js         # Mock HIS Quảng Nam (Custom REST RPC - Port 8003)
-    └── tests/                           # Bộ kịch bản kiểm chứng tự động hóa
-        ├── test_concurrency_double_booking.js       # Kiểm chứng ASR-01 (50 concurrent requests)
-        ├── test_circuit_breaker_fault_tolerance.js  # Kiểm chứng ASR-02 (Sập HIS Huế & Circuit Breaker)
-        ├── test_security_rbac_abac.js               # Kiểm chứng ASR-03 (Chặn truy cập chéo 403 & Audit)
-        ├── test_audit_tamper_detection.js           # Kiểm chứng ASR-05 (Phát hiện giả mạo chuỗi băm HMAC)
-        ├── test_extensibility_his4.js               # Kiểm chứng ASR-04 (Tích hợp HIS 4 chuẩn HL7 FHIR)
-        └── run_all_verification_tests.js            # Runner chính thực thi toàn bộ kiểm chứng & xuất báo cáo
-```
+| STT | Họ và Tên | Vai trò đảm nhiệm | Trách nhiệm chính |
+|:---:|-----------|-------------------|-------------------|
+| 1 | **Trần Tiến Danh** | *Prototype Lead* | Hiện thực khung kiến trúc `src/` (`core`, `worker`, `mock-his`), khóa phân tán Redis + Fencing Token, CSDL SQLite WAL (`UNIQUE` + Trigger), mã hóa `AES-256-GCM`, Object Storage Pre-signed URL & `docker-compose.yml`. |
+| 2 | **Lê Viết Nghĩa** | *Requirements & Documentation Owner* | Phân tích Business Goals, Stakeholders, 10 Use Cases, phân loại dữ liệu & trích xuất 5 ràng buộc kỹ thuật từ Nghị định 13/2023/NĐ-CP; quản lý `SAD.md`, Slide, báo cáo `.docx` và nhật ký `ai-log.md`. |
+| 3 | **Nguyễn Đức Bảo Hy** | *Lead Architect* | Xây dựng Utility Tree & chọn 4 ASR `(H, H)`, lựa chọn Tactics/Style, thiết kế đồng bộ 6 sơ đồ C4/Deployment/Sequence, chủ trì đánh giá ATAM nâng cấp lên Architecture v2 và phê duyệt 7 ADRs (`ADR-001` → `ADR-007`). |
+| 4 | **Nguyễn Quang Trường** | *QA / Test Lead* | Định lượng hóa 8 QA Scenarios chuẩn 6 phần kèm mô hình ước lượng tải, xây dựng 6 kịch bản kiểm thử tự động trong `src/tests/`, đo đạc số liệu thực tế và biên soạn cẩm nang luyện vấn đáp. |
 
 ---
 
-## 3. Hướng dẫn Chạy Thử nghiệm Prototype (Quick Start)
-
-### Yêu cầu tiên quyết:
-- Đã cài đặt **Node.js** (khuyến nghị phiên bản 20 LTS hoặc 24) hoặc **Docker**.
-
-### Cách 1: Chạy trực tiếp qua Node.js (Nhanh nhất)
-```bash
-# 1. Di chuyển vào thư mục src
-cd src
-
-# 2. Cài đặt các gói phụ thuộc (chỉ mất ~5 giây)
-npm install
-
-# 3. Chạy toàn bộ bộ kiểm chứng Quality Attributes tự động (Master Verification Suite)
-node tests/run_all_verification_tests.js
-```
-
-### Cách 2: Chạy qua Docker Compose (Môi trường chuẩn hóa)
-```bash
-docker compose up --build
-```
-Hệ thống sẽ khởi chạy toàn bộ MediLink Core và 3 Mock HIS độc lập trên các cổng:
-- **MediLink Core:** `http://localhost:3000` (Health: `http://localhost:3000/health`)
-- **Mock HIS Đà Nẵng (REST/JSON):** `http://localhost:8001`
-- **Mock HIS Huế (SOAP/XML):** `http://localhost:8002`
-- **Mock HIS Quảng Nam (Custom REST):** `http://localhost:8003`
-
----
-
-## 4. Tóm tắt Kết quả Đo lường Thực nghiệm (Real Metrics Summary)
+## 2. Bản đồ Sản phẩm Bàn giao theo Quy trình 15 Bước & 5 Mốc (M1 – M5)
 
 ```text
-╔═════════╦════════════════════════════════════════╦══════════════════════════════════╦════════════╗
-║ Mã ASR  ║ Thuộc tính chất lượng kiểm chứng     ║ Kết quả đo lường thực tế         ║ Đánh giá   ║
-╠═════════╬════════════════════════════════════════╬══════════════════════════════════╬════════════╣
-║ ASR-01  ║ Chống Đặt trùng lịch (Concurrency 50) ║ 1 thành công, 49 rejected, p95: 388ms ║  [ PASSED ]  ║
-║ ASR-02  ║ Chịu lỗi & Cách ly Sự cố HIS Huế     ║ Đà Nẵng: OK, Quảng Nam: OK, Huế: OPEN ║  [ PASSED ]  ║
-║ ASR-03  ║ Bảo mật & Contextual ABAC            ║ Mã HTTP: 403, Audit Log Recorded: true ║  [ PASSED ]  ║
-║ ASR-05  ║ Toàn vẹn Nhật ký Kiểm toán HMAC       ║ Phát hiện gian lận: CÓ (Chính xác) ║  [ PASSED ]  ║
-║ ASR-04  ║ Khả năng Mở rộng Tích hợp HIS 4 (FHIR)║ Đồng bộ HIS 4: THÀNH CÔNG, FHIR: true ║  [ PASSED ]  ║
-╚═════════╩════════════════════════════════════════╩══════════════════════════════════╩════════════╝
+├── README.md                                 # Tổng quan dự án, kiến trúc & hướng dẫn chạy kiểm chứng
+├── ai-log.md                                 # [BẮT BUỘC] Nhật ký sử dụng AI đủ 6 cột & quy tắc 3 câu hỏi
+├── BaoCao_GroupProject_MediLink_SE403.docx   # Báo cáo tổng hợp hoàn chỉnh định dạng Microsoft Word (.docx)
+├── docker-compose.yml                        # Khởi chạy 6 containers trên 3 mạng cách ly (app-net, data-net, his-net)
+├── docs/
+│   ├── stage-0.md                            # Giai đoạn 0 (Bước 1–2): Phân vai M1–M5, 5 câu tóm tắt & 10 giả định A1–A10
+│   ├── m1-architectural-drivers.md           # Mốc M1 (Bước 3–6): Goals, Stakeholders, 10 UCs, NĐ 13/2023, 8 QAS, Utility Tree
+│   ├── m2-architecture-design.md             # Mốc M2 (Bước 7–10): Tactics, Bảng so sánh Lock/ACL/Style, C4 L1–L3, Deployment, Sequences
+│   ├── m3-architecture-evaluation.md         # Mốc M3 (Bước 11–12): Đánh giá ATAM rút gọn, Peer Review & nâng cấp Architecture v2
+│   ├── m4-prototype-verification.md          # Mốc M4 (Bước 13–14): Ánh xạ 1:1 C4 -> Code & Báo cáo số đo thực nghiệm thật
+│   ├── SAD.md                                # Mốc M5 (Bước 15): Software Architecture Document hoàn chỉnh + Checklist 8 mục
+│   ├── presentation-slides.md                # Mốc M5 (Bước 15): Đề cương 15 slides thuyết trình 20 phút + kịch bản Live Demo
+│   └── qa-interview-prep.md                  # Mốc M5 (Bước 15): Đáp án 3 câu bắt buộc MediLink & bộ câu hỏi 6 cấp độ Bloom
+├── diagrams/                                 # Mã nguồn 6 sơ đồ C4-PlantUML (đều có Trust Boundary & Legend)
+│   ├── c4-context.puml                       # C4 Level 1: System Context View
+│   ├── c4-container.puml                     # C4 Level 2: Container View (khớp 1:1 với Docker Compose)
+│   ├── c4-component-acl.puml                 # C4 Level 3: Component View của medilink-core & Anti-Corruption Layer
+│   ├── deployment-view.puml                  # Deployment View trên 3 mạng Docker cách ly
+│   ├── sequence-booking-concurrency.puml     # Sequence 1: Chống Double-Booking 3 lớp & Dự phòng Outbox (ASR-01, ASR-02)
+│   └── sequence-security-audit.puml          # Sequence 2: ABAC, Consent, Giải mã AES-256-GCM & Audit HMAC (ASR-03, QAS-05)
+├── adr/                                      # 7 Bản ghi Quyết định Kiến trúc (Architecture Decision Records)
+│   ├── 0001-architectural-style.md           # ADR-001: Modular Monolith + Hexagonal + Background Worker tách rời
+│   ├── 0002-his-integration-acl-canonical-model.md        # ADR-002: ACL + HL7 FHIR R4 (Partially Superseded by ADR-007)
+│   ├── 0003-concurrency-distributed-locking-idempotency.md# ADR-003: Idempotency + Redis Lock (Fencing) + SQLite UNIQUE
+│   ├── 0004-security-rbac-facility-scope-immutable-audit.md# ADR-004: RBAC + Facility ABAC + Consent + AES-256-GCM + HMAC Chain
+│   ├── 0005-asynchronous-notification-queue.md            # ADR-005: Hàng đợi gửi nhắc lịch Zalo/SMS/Email có Backoff
+│   ├── 0006-lab-result-object-storage-presigned-url.md    # ADR-006: Lưu file PDF xét nghiệm bằng Object Storage + Pre-signed URL
+│   └── 0007-v2-outbox-rate-controlled-recovery.md         # ADR-007 (v2): Circuit Breaker + Transactional Outbox + Jitter
+└── src/                                      # Mã nguồn Prototype Node.js 22 thuần chuẩn (0 dependency rác bên ngoài)
+    ├── core/                                 # Container `medilink-core` (gateway, auth, booking, ehr, acl, audit, db)
+    ├── worker/backgroundWorker.js            # Container `medilink-worker` (OutboxSync, NotificationQueue, AuditVerifier)
+    ├── mock-his/                             # 3 Containers Mock HIS độc lập: Đà Nẵng (REST), Huế (SOAP/XML), Quảng Nam (RPC)
+    └── tests/                                # 6 bộ kiểm thử tự động + báo cáo JSON số đo thật `latest_verification_report.json`
 ```
 
 ---
 
-## 5. Giấy phép & Tuyên bố Bản quyền
+## 3. Hướng dẫn Chạy Nhanh & Tái hiện Kiểm chứng (Quick Start)
 
-Đồ án được thực hiện nghiêm túc bởi Nhóm sinh viên CMUSE 403, tuân thủ đúng Quy chế học vụ và Đạo đức học thuật. Mọi công cụ AI được sử dụng đều có nhật ký giải trình đầy đủ tại `ai-log.md`.
+### Yêu cầu môi trường
+- **Node.js ≥ 22.5.0** (khuyến nghị `v22.15.0` LTS – sử dụng sẵn `node:sqlite`, `node:crypto`, `node:net`, không cần chạy `npm install`!) hoặc **Docker Compose v2**.
+
+### Cách 1: Chạy trọn bộ 6 kịch bản kiểm chứng QA tự động bằng 1 lệnh (Nhanh nhất – ~3 giây)
+```powershell
+node --no-warnings src/tests/run_all_verification_tests.js
+```
+
+### Cách 2: Khởi chạy đầy đủ hạ tầng 6 Containers trên 3 Mạng Docker cách ly
+```powershell
+docker compose up --build -d
+
+# Kiểm tra trạng thái sức khỏe & các bộ ngắt mạch Circuit Breaker:
+curl http://localhost:3000/health
+
+# Demo tắt hẳn container HIS Huế để chứng minh Đà Nẵng & Quảng Nam vẫn đặt lịch 100% bình thường:
+docker stop mock-his-hue
+```
+
+---
+
+## 4. Tóm tắt Kết quả Đo lường Thực tế trên Máy Thực nghiệm của Nhóm
+
+- **Môi trường phần cứng thực đo:** `Intel(R) Core(TM) i3-1005G1 CPU @ 1.20GHz (4 vCPU)`, `3.79 GB RAM`, `Windows 11 (win32 10.0.26200 x64)`, `Node.js v22.15.0`.
+
+```text
+╔══════════════════╦═══════════════════════════════════════╦══════════════════════════════════════════╦════════════╗
+║ Kịch bản QA      ║ Thuộc tính Chất lượng Kiểm chứng      ║ Số liệu Đo lường Thực tế                 ║ Kết quả    ║
+╠══════════════════╬═══════════════════════════════════════╬══════════════════════════════════════════╬════════════╣
+║ ASR-01 / QAS-07  ║ Consistency & Idempotency (50 reqs)   ║ 1 OK, 49 Conflict, Replay OK, p95=142.16ms ║ [ PASSED ] ║
+║ ASR-02 / ADR-007 ║ Availability & Outbox Recovery (Huế)  ║ CB=OPEN (7.38ms), Outbox=4/4             ║ [ PASSED ] ║
+║ ASR-03 / NĐ 13   ║ Security ABAC, Consent & AES-256-GCM  ║ HTTP 403 (2.37ms), AES-GCM=true          ║ [ PASSED ] ║
+║ QAS-05 / C-04    ║ Audit Append-Only Trigger & HMAC      ║ Trigger=Blocked, HMAC Catch=0.395ms      ║ [ PASSED ] ║
+║ ASR-04           ║ Interoperability HIS #4 (HL7 FHIR R4) ║ Synced (HOIAN-FHIR-1285), Core=0 dòng    ║ [ PASSED ] ║
+║ QAS-06 / QAS-08  ║ Performance (200 Reads) & Async Queue ║ 683 req/s, p95=258.5ms, Queue=SENT       ║ [ PASSED ] ║
+╚══════════════════╩═══════════════════════════════════════╩══════════════════════════════════════════╩════════════╝
+```

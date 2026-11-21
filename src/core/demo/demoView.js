@@ -707,18 +707,32 @@ function renderDashboardHtml() {
             btn.innerText = '❌ CHƯA CẤP QUYỀN (Bấm để Cấp)';
           }
         }
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error('checkConsent error:', e); }
     }
 
     async function toggleConsent() {
-      const token = tokens['patient2'];
       const nextVal = !consentState;
-      await fetch('/api/ehr/consents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ facility_id: 'FAC_DANANG', grant: nextVal })
-      });
-      await checkConsentStatus();
+      try {
+        const res = await fetch('/api/demo/toggle-consent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ grant: nextVal })
+        });
+        const d = await res.json();
+        if (d.success) {
+          consentState = d.is_active;
+          const btn = document.getElementById('btn-toggle-consent');
+          if (consentState) {
+            btn.className = 'btn btn-success';
+            btn.innerText = '✅ ĐÃ CẤP QUYỀN (Bấm để Thu Hồi)';
+          } else {
+            btn.className = 'btn btn-secondary';
+            btn.innerText = '❌ CHƯA CẤP QUYỀN (Bấm để Cấp)';
+          }
+        }
+      } catch (e) {
+        console.error('toggleConsent error:', e);
+      }
       await fetchMedicalRecord();
     }
 

@@ -119,7 +119,40 @@ function registerDemoRoutes(app) {
     });
   });
 
-  // 4. Toggle Mock HIS Huế Chaos Mode
+  // 4. Toggle Patient2 Consent for FAC_DANANG (Demo shortcut – no JWT required)
+  app.post('/api/demo/toggle-consent', (req, res) => {
+    const { grant } = req.body;
+    const nowIso = new Date().toISOString();
+    const existing = db.sqlite.prepare(
+      'SELECT is_active FROM patient_consents WHERE patient_id = ? AND granted_facility_id = ?'
+    ).get('user_pat_02', 'FAC_DANANG');
+
+    if (existing) {
+      db.sqlite.prepare(
+        'UPDATE patient_consents SET is_active = ?, updated_at = ? WHERE patient_id = ? AND granted_facility_id = ?'
+      ).run(grant ? 1 : 0, nowIso, 'user_pat_02', 'FAC_DANANG');
+    } else {
+      db.sqlite.prepare(
+        'INSERT INTO patient_consents (patient_id, granted_facility_id, scope, is_active, updated_at) VALUES (?, ?, ?, ?, ?)'
+      ).run('user_pat_02', 'FAC_DANANG', 'READ_EHR', grant ? 1 : 0, nowIso);
+    }
+
+    const afterRow = db.sqlite.prepare(
+      'SELECT is_active FROM patient_consents WHERE patient_id = ? AND granted_facility_id = ?'
+    ).get('user_pat_02', 'FAC_DANANG');
+
+    res.json({
+      success: true,
+      patient_id: 'user_pat_02',
+      facility_id: 'FAC_DANANG',
+      is_active: Boolean(afterRow && afterRow.is_active),
+      message: grant
+        ? '✅ Bệnh nhân Trần Thị Bình đã cấp quyền chia sẻ bệnh án cho Cơ sở Đà Nẵng.'
+        : '❌ Đã thu hồi quyền chia sẻ bệnh án khỏi Cơ sở Đà Nẵng.'
+    });
+  });
+
+  // 5. Toggle Mock HIS Huế Chaos Mode
   app.post('/api/demo/toggle-his-hue', (req, res) => {
     const { mode = 'UP' } = req.body;
     mockManager.setHueChaosMode(mode);

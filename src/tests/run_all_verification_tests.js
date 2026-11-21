@@ -8,6 +8,16 @@
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
+
+async function resolveAvailablePort(preferredPort, fallbackPort = preferredPort + 1) {
+  return new Promise((resolve) => {
+    const s = http.createServer();
+    s.once('error', () => resolve(fallbackPort));
+    s.once('listening', () => s.close(() => resolve(preferredPort)));
+    s.listen(preferredPort, '127.0.0.1');
+  });
+}
 
 const createServer = require('../core/server');
 const mockManager = require('../mock-his/mockServersManager');
@@ -36,21 +46,23 @@ async function runAllTests() {
   console.log(`[Môi trường đo thực tế] CPU: ${envInfo.cpuModel} (${envInfo.logicalCores} vCPU) | RAM: ${envInfo.totalRamGb} GB | OS: ${envInfo.osPlatform} | Node: ${envInfo.nodeVersion}`);
 
   await mockManager.startAll({ daNangPort: 8001, huePort: 8002, quangNamPort: 8003 });
+  const testPort = await resolveAvailablePort(3000, 3001);
   const app = createServer();
-  const server = await new Promise((resolve) => {
-    const s = app.listen(3000, '127.0.0.1', () => resolve(s));
+  const server = await new Promise((resolve, reject) => {
+    const s = app.listen(testPort, '127.0.0.1', () => resolve(s));
+    s.on('error', reject);
   });
 
   const summary = [];
   let rawMetrics = {};
 
   try {
-    const t1 = await runConcurrencyTest(3000);
-    const t2 = await runCircuitBreakerTest(3000);
-    const t3 = await runSecurityTest(3000);
-    const t4 = await runAuditTamperTest(3000);
-    const t5 = await runExtensibilityTest(3000);
-    const t6 = await runPerformanceAndWorkerTest(3000);
+    const t1 = await runConcurrencyTest(testPort);
+    const t2 = await runCircuitBreakerTest(testPort);
+    const t3 = await runSecurityTest(testPort);
+    const t4 = await runAuditTamperTest(testPort);
+    const t5 = await runExtensibilityTest(testPort);
+    const t6 = await runPerformanceAndWorkerTest(testPort);
 
     rawMetrics = { t1, t2, t3, t4, t5, t6 };
 

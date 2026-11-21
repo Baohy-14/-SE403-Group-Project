@@ -25,6 +25,7 @@ const labStorageService = require('./ehr/labStorageService');
 const auditService = require('./audit/auditService');
 const auditVerifier = require('./audit/auditVerifier');
 const hisDispatcher = require('./acl/hisDispatcher');
+const { registerDemoRoutes } = require('./demo/demoRoutes');
 
 function createServer() {
   const app = createHttpApp();
@@ -254,15 +255,21 @@ function createServer() {
     res.json({ success: true, message: 'Đã đặt lại trạng thái môi trường kiểm thử MediLink.' });
   });
 
+  // ==================== INTERACTIVE ARCHITECTURE DEMO UI ====================
+  registerDemoRoutes(app);
+
   return app;
 }
 
 if (require.main === module) {
+  const mockManager = require('../mock-his/mockServersManager');
+  mockManager.startAll().catch(() => {});
   const app = createServer();
   app.listen(config.PORT, () => {
     console.log('==============================================================');
     console.log(` MediLink Core Platform v2.0 listening on port ${config.PORT}`);
-    console.log(` Health Check: http://localhost:${config.PORT}/health`);
+    console.log(` Demo Dashboard: http://localhost:${config.PORT}/demo`);
+    console.log(` Health Check:   http://localhost:${config.PORT}/health`);
     console.log('==============================================================');
   });
 }

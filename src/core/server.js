@@ -265,13 +265,26 @@ if (require.main === module) {
   const mockManager = require('../mock-his/mockServersManager');
   mockManager.startAll().catch(() => {});
   const app = createServer();
-  app.listen(config.PORT, () => {
-    console.log('==============================================================');
-    console.log(` MediLink Core Platform v2.0 listening on port ${config.PORT}`);
-    console.log(` Demo Dashboard: http://localhost:${config.PORT}/demo`);
-    console.log(` Health Check:   http://localhost:${config.PORT}/health`);
-    console.log('==============================================================');
-  });
+
+  function startListening(port) {
+    const srv = app.listen(port, () => {
+      console.log('==============================================================');
+      console.log(` MediLink Core Platform v2.0 listening on port ${port}`);
+      console.log(` Demo Dashboard: http://localhost:${port}/demo`);
+      console.log(` Health Check:   http://localhost:${port}/health`);
+      console.log('==============================================================');
+    });
+    srv.on('error', (err) => {
+      if ((err.code === 'EADDRINUSE' || err.code === 'EACCES') && port < 3010) {
+        console.log(`[Notice] Port ${port} is occupied (${err.code}), automatically falling back to port ${port + 1}...`);
+        startListening(port + 1);
+      } else {
+        console.error('Server startup error:', err);
+      }
+    });
+  }
+
+  startListening(config.PORT);
 }
 
 module.exports = createServer;

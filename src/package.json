@@ -7,7 +7,8 @@
     "node": ">=22.5.0"
   },
   "scripts": {
-    "start": "node --no-warnings core/server.js",
+    "start": "node --no-warnings start-all.js",
+    "start:core": "node --no-warnings core/server.js",
     "worker": "node --no-warnings worker/backgroundWorker.js",
     "mock-his": "node --no-warnings mock-his/mockServersManager.js",
     "mock-his:danang": "node --no-warnings mock-his/hisDaNangServer.js",

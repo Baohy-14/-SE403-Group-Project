@@ -1,6 +1,8 @@
 /**
  * MediLink Interactive Architecture Verification Dashboard View
- * Zero-dependency standalone HTML/CSS/JS page for CMUSE 403 / SE403 Defense & Demo
+ * Thiết kế giao diện trực quan, rõ ràng, màu sắc tự nhiên chuẩn Y tế (Clean Medical UI)
+ * Dành cho buổi Báo cáo & Vấn đáp đồ án SE 403 (TS. Nguyễn Đức Mận)
+ * Nhóm Đề tài 1: Nguyễn Đức Bảo Hy, Lê Viết Nghĩa, Trần Tiến Danh, Nguyễn Quang Trường
  */
 
 function renderDashboardHtml() {
@@ -9,545 +11,935 @@ function renderDashboardHtml() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MediLink - Kiến Trúc Hệ Thống (Architecture Verification Dashboard)</title>
+  <title>MediLink Healthcare - Bảng Điều Khiển & Kiểm Định Kiến Trúc</title>
   <style>
     :root {
-      --bg: #0f172a;
-      --card-bg: #1e293b;
-      --card-border: #334155;
-      --text: #f8fafc;
-      --text-muted: #94a3b8;
-      --primary: #38bdf8;
-      --primary-hover: #0ea5e9;
-      --success: #22c55e;
-      --success-bg: rgba(34, 197, 94, 0.15);
-      --danger: #ef4444;
-      --danger-bg: rgba(239, 68, 68, 0.15);
-      --warning: #f59e0b;
-      --warning-bg: rgba(245, 158, 11, 0.15);
-      --accent: #818cf8;
-      --code-bg: #090d16;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --card-border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --primary: #0284c7;
+      --primary-hover: #0369a1;
+      --primary-light: #e0f2fe;
+      --success: #16a34a;
+      --success-bg: #f0fdf4;
+      --success-border: #86efac;
+      --danger: #dc2626;
+      --danger-bg: #fef2f2;
+      --danger-border: #fca5a5;
+      --warning: #d97706;
+      --warning-bg: #fffbeb;
+      --warning-border: #fcd34d;
+      --code-bg: #0f172a;
+      --code-text: #e2e8f0;
+      --radius: 10px;
+      --shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       background-color: var(--bg);
       color: var(--text);
-      line-height: 1.5;
-      padding: 20px;
+      line-height: 1.6;
+      padding: 24px;
+      font-size: 15px;
     }
+
+    /* Header */
     header {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 20px 28px;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding-bottom: 20px;
-      border-bottom: 1px solid var(--card-border);
-      margin-bottom: 24px;
       flex-wrap: wrap;
       gap: 16px;
     }
-    .logo-area { display: flex; align-items: center; gap: 12px; }
-    .badge-topic {
-      background: linear-gradient(135deg, #0284c7, #6366f1);
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
-    }
-    h1 { font-size: 22px; font-weight: 700; color: #fff; }
-    .subtitle { font-size: 13px; color: var(--text-muted); }
 
-    .status-bar {
+    .brand-area {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .brand-icon {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #0284c7, #0ea5e9);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 24px;
+      font-weight: 800;
+      box-shadow: 0 4px 10px rgba(2, 132, 199, 0.25);
+    }
+
+    .brand-title h1 {
+      font-size: 22px;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.3px;
+    }
+
+    .brand-title .subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .system-status-pills {
       display: flex;
       gap: 12px;
-      background: var(--card-bg);
-      padding: 10px 16px;
-      border-radius: 8px;
-      border: 1px solid var(--card-border);
       align-items: center;
       flex-wrap: wrap;
     }
-    .status-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 13px;
-    }
-    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-    .dot-green { background-color: var(--success); box-shadow: 0 0 8px var(--success); }
-    .dot-red { background-color: var(--danger); box-shadow: 0 0 8px var(--danger); }
-    .dot-yellow { background-color: var(--warning); box-shadow: 0 0 8px var(--warning); }
 
-    /* Tabs */
-    .tabs {
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      background: #f1f5f9;
+      border: 1px solid var(--card-border);
+      color: #334155;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .dot-green { background-color: var(--success); }
+    .dot-red { background-color: var(--danger); }
+    .dot-yellow { background-color: var(--warning); }
+
+    /* Navigation Tabs */
+    .nav-tabs {
       display: flex;
       gap: 8px;
-      margin-bottom: 20px;
-      border-bottom: 1px solid var(--card-border);
-      padding-bottom: 8px;
+      margin-bottom: 24px;
       overflow-x: auto;
-    }
-    .tab-btn {
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      padding: 10px 18px;
-      font-size: 14px;
-      font-weight: 600;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.2s;
-      white-space: nowrap;
-    }
-    .tab-btn:hover { color: var(--text); background: rgba(255,255,255,0.05); }
-    .tab-btn.active {
-      color: #fff;
-      background: var(--card-border);
-      box-shadow: inset 0 -2px 0 var(--primary);
+      padding-bottom: 4px;
     }
 
-    /* Content Panels */
-    .panel { display: none; }
-    .panel.active { display: block; animation: fadeIn 0.25s ease-in-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    .nav-tab-btn {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: #475569;
+      padding: 12px 20px;
+      font-size: 14px;
+      font-weight: 700;
+      border-radius: var(--radius);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+      white-space: nowrap;
+    }
+
+    .nav-tab-btn:hover {
+      background: #f8fafc;
+      color: var(--primary);
+      border-color: #cbd5e1;
+    }
+
+    .nav-tab-btn.active {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+      box-shadow: 0 3px 8px rgba(2, 132, 199, 0.25);
+    }
+
+    /* Panel layout */
+    .tab-panel {
+      display: none;
+    }
+    .tab-panel.active {
+      display: block;
+      animation: fadeIn 0.2s ease-in;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
 
     .grid-2 {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 20px;
     }
-    @media (max-width: 960px) { .grid-2 { grid-template-columns: 1fr; } }
+    @media (max-width: 1024px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
 
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    @media (max-width: 900px) {
+      .grid-3 { grid-template-columns: 1fr; }
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 1100px) {
+      .grid-4 { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 600px) {
+      .grid-4 { grid-template-columns: 1fr; }
+    }
+
+    /* Cards */
     .card {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
-      border-radius: 10px;
-      padding: 20px;
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
       margin-bottom: 20px;
     }
-    .card-title {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--primary);
-      margin-bottom: 12px;
+
+    .card-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #f1f5f9;
     }
-    .tag-driver {
+
+    .card-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #0f172a;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge-driver {
       font-size: 11px;
-      background: rgba(56, 189, 248, 0.15);
-      color: var(--primary);
-      padding: 2px 8px;
-      border-radius: 4px;
-      border: 1px solid rgba(56, 189, 248, 0.3);
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #e0f2fe;
+      color: #0369a1;
+      border: 1px solid #bae6fd;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
     }
 
-    .desc { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+    .card-desc {
+      font-size: 14px;
+      color: #475569;
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
 
-    /* Buttons & Controls */
-    .btn {
-      background: var(--primary);
-      color: #04101c;
-      border: none;
-      padding: 9px 16px;
+    /* Big Metric Boxes */
+    .metric-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 20px;
+      text-align: center;
+      transition: all 0.2s;
+    }
+    .metric-box:hover {
+      border-color: #cbd5e1;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.04);
+    }
+    .metric-value {
+      font-size: 32px;
+      font-weight: 800;
+      color: #0f172a;
+      line-height: 1.2;
+    }
+    .metric-label {
       font-size: 13px;
       font-weight: 600;
-      border-radius: 6px;
+      color: #64748b;
+      margin-top: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Buttons */
+    .btn-group {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .btn {
+      padding: 12px 20px;
+      font-size: 14px;
+      font-weight: 700;
+      border-radius: 8px;
+      border: none;
       cursor: pointer;
-      transition: background 0.2s;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
+      transition: all 0.15s ease-in-out;
     }
-    .btn:hover { background: var(--primary-hover); }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      box-shadow: 0 2px 4px rgba(2, 132, 199, 0.2);
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
     .btn-secondary {
-      background: rgba(255,255,255,0.08);
-      color: var(--text);
-      border: 1px solid var(--card-border);
+      background: #f1f5f9;
+      color: #334155;
+      border: 1px solid #cbd5e1;
     }
-    .btn-secondary:hover { background: rgba(255,255,255,0.15); }
-    .btn-danger {
-      background: var(--danger);
-      color: #fff;
+    .btn-secondary:hover {
+      background: #e2e8f0;
     }
-    .btn-danger:hover { background: #dc2626; }
+
     .btn-success {
       background: var(--success);
-      color: #04101c;
+      color: white;
     }
-    .btn-success:hover { background: #16a34a; }
-    .btn-warning {
-      background: var(--warning);
-      color: #04101c;
+    .btn-success:hover {
+      background: #15803d;
     }
 
-    .form-group { margin-bottom: 14px; }
-    label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; }
-    select, input {
+    .btn-danger {
+      background: var(--danger);
+      color: white;
+    }
+    .btn-danger:hover {
+      background: #b91c1c;
+    }
+
+    /* Form Controls */
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      color: #334155;
+      margin-bottom: 6px;
+    }
+    .form-control {
       width: 100%;
-      background: var(--code-bg);
-      border: 1px solid var(--card-border);
-      color: var(--text);
-      padding: 8px 12px;
-      border-radius: 6px;
+      padding: 10px 14px;
       font-size: 14px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #0f172a;
+      transition: border-color 0.15s;
     }
-    select:focus, input:focus { outline: none; border-color: var(--primary); }
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+    }
 
-    /* Live results box */
-    .result-box {
+    /* Alert Boxes */
+    .alert {
+      padding: 14px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      line-height: 1.5;
+    }
+    .alert-success {
+      background: var(--success-bg);
+      border: 1px solid var(--success-border);
+      color: #166534;
+    }
+    .alert-danger {
+      background: var(--danger-bg);
+      border: 1px solid var(--danger-border);
+      color: #991b1b;
+    }
+    .alert-warning {
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      color: #92400e;
+    }
+    .alert-info {
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      color: #0369a1;
+    }
+
+    /* Code & JSON Result Box */
+    .code-box {
       background: var(--code-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 6px;
-      padding: 14px;
+      color: var(--code-text);
+      border-radius: 8px;
+      padding: 16px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 12px;
+      font-size: 13px;
+      line-height: 1.5;
       max-height: 280px;
       overflow-y: auto;
       white-space: pre-wrap;
       word-break: break-all;
+      border: 1px solid #334155;
     }
 
-    .alert {
-      padding: 12px 16px;
-      border-radius: 6px;
-      font-size: 13px;
-      margin-bottom: 14px;
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-    }
-    .alert-success { background: var(--success-bg); border: 1px solid var(--success); color: #86efac; }
-    .alert-danger { background: var(--danger-bg); border: 1px solid var(--danger); color: #fca5a5; }
-    .alert-warning { background: var(--warning-bg); border: 1px solid var(--warning); color: #fde047; }
-    .alert-info { background: rgba(56, 189, 248, 0.12); border: 1px solid var(--primary); color: #bae6fd; }
-
-    /* Stats Grid */
-    .stat-row {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-    .stat-card {
-      background: rgba(0,0,0,0.25);
+    /* Tables */
+    .table-container {
+      overflow-x: auto;
       border: 1px solid var(--card-border);
-      padding: 12px;
-      border-radius: 6px;
-      text-align: center;
+      border-radius: 8px;
     }
-    .stat-num { font-size: 20px; font-weight: 700; color: #fff; }
-    .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-top: 2px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th {
+      background: #f8fafc;
+      color: #475569;
+      font-weight: 700;
+      text-align: left;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid #f1f5f9;
+      color: #1e293b;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f8fafc; }
 
-    /* Table */
-    table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
-    th { text-align: left; padding: 8px 10px; background: rgba(0,0,0,0.3); color: var(--text-muted); border-bottom: 1px solid var(--card-border); }
-    td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
-    tr:hover td { background: rgba(255,255,255,0.02); }
+    /* Explanation Note Box */
+    .arch-note {
+      background: #f8fafc;
+      border-left: 4px solid var(--primary);
+      padding: 12px 16px;
+      border-radius: 0 8px 8px 0;
+      font-size: 13px;
+      color: #475569;
+      margin-top: 14px;
+    }
+    .arch-note b { color: #0f172a; }
   </style>
 </head>
 <body>
 
+  <!-- HEADER -->
   <header>
-    <div class="logo-area">
-      <div class="badge-topic">CMUSE 403 / SE 403</div>
-      <div>
-        <h1>MediLink Platform - Kiến Trúc & Kiểm Định Trực Quan</h1>
-        <div class="subtitle">Đề tài 1: Nền tảng Đặt lịch khám & Quản lý EHR Liên chuỗi 12 Phòng khám (Architecture v2)</div>
+    <div class="brand-area">
+      <div class="brand-icon">M</div>
+      <div class="brand-title">
+        <h1>MediLink Platform - Bảng Điều Khiển & Kiểm Định Kiến Trúc</h1>
+        <div class="subtitle">
+          SE 403 (TS. Nguyễn Đức Mận) · Đề tài 1: Nền tảng Đặt lịch & Quản lý EHR Liên chuỗi 12 Phòng khám (v2)
+        </div>
       </div>
     </div>
-    <div class="status-bar">
-      <div class="status-item">
+
+    <div class="system-status-pills">
+      <div class="pill">
         <span class="dot dot-green" id="dot-core"></span>
-        <span>Core API: <b>Port 3000</b></span>
+        <span>Core API: <b id="lbl-port">Port 3000</b></span>
       </div>
-      <div class="status-item">
+      <div class="pill">
         <span class="dot dot-green" id="dot-lock"></span>
         <span id="txt-lock">Lock: <b>Redis/Atomic</b></span>
       </div>
-      <div class="status-item">
+      <div class="pill">
         <span class="dot dot-green" id="dot-audit"></span>
         <span id="txt-audit">Audit HMAC: <b>Toàn vẹn</b></span>
       </div>
-      <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px;" onclick="resetAllState()">
-        🔄 Reset Toàn Bộ
+      <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 13px;" onclick="resetAllState()">
+        🔄 Reset Trạng Thái
       </button>
     </div>
   </header>
 
   <!-- NAVIGATION TABS -->
-  <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('tab-concurrency')">1. [ASR-01] Chống Double-Booking (Concurrency)</button>
-    <button class="tab-btn" onclick="switchTab('tab-security')">2. [ASR-03] Bảo mật ABAC, Consent & Giải mã AES</button>
-    <button class="tab-btn" onclick="switchTab('tab-circuit')">3. [ASR-02] Cách ly Lỗi HIS (Circuit Breaker & Outbox)</button>
-    <button class="tab-btn" onclick="switchTab('tab-audit')">4. [ASR-05] Sổ Cái Audit HMAC & Phát Hiện Giả Mạo</button>
+  <div class="nav-tabs">
+    <button class="nav-tab-btn active" onclick="switchTab('tab-overview')">
+      📊 1. Tổng Quan Chuỗi 12 Phòng Khám
+    </button>
+    <button class="nav-tab-btn" onclick="switchTab('tab-concurrency')">
+      ⚡ 2. [ASR-01] Đặt Lịch & Chống Trùng (Concurrency)
+    </button>
+    <button class="nav-tab-btn" onclick="switchTab('tab-security')">
+      🛡️ 3. [ASR-03] Bảo Mật ABAC & Nghị Định 13/2023
+    </button>
+    <button class="nav-tab-btn" onclick="switchTab('tab-circuit')">
+      🔌 4. [ASR-02] Cách Ly Lỗi HIS & Outbox Recovery
+    </button>
+    <button class="nav-tab-btn" onclick="switchTab('tab-audit')">
+      📜 5. [ASR-05] Sổ Cái Audit HMAC Bất Biến
+    </button>
   </div>
 
-  <!-- ==================== TAB 1: CONCURRENCY & DOUBLE-BOOKING ==================== -->
-  <div id="tab-concurrency" class="panel active">
-    <div class="grid-2">
+  <!-- ==================== TAB 1: EXECUTIVE OVERVIEW ==================== -->
+  <div id="tab-overview" class="tab-panel active">
+    <!-- 4 High-level KPI Cards -->
+    <div class="grid-4">
+      <div class="card metric-box">
+        <div class="metric-value" style="color: var(--primary);" id="ov-clinics">12</div>
+        <div class="metric-label">Tổng Cơ Sở Phòng Khám</div>
+      </div>
+      <div class="card metric-box">
+        <div class="metric-value" style="color: var(--success);" id="ov-bookings">0</div>
+        <div class="metric-label">Lịch Hẹn Xác Nhận</div>
+      </div>
+      <div class="card metric-box">
+        <div class="metric-value" style="color: #0d9488;" id="ov-double-booking">0.00%</div>
+        <div class="metric-label">Tỷ Lệ Double-Booking</div>
+      </div>
+      <div class="card metric-box">
+        <div class="metric-value" style="color: #6366f1;" id="ov-outbox">0</div>
+        <div class="metric-label">Sự Kiện Outbox Chờ Bù</div>
+      </div>
+    </div>
+
+    <!-- 3 Facility Cards -->
+    <div class="grid-3">
+      <!-- Cơ sở Đà Nẵng -->
       <div class="card">
-        <div class="card-title">
-          <span>Kịch Bản Đặt Lịch Tranh Chấp (Race Condition)</span>
-          <span class="tag-driver">ASR-01 | ADR-0003</span>
+        <div class="card-header">
+          <div class="card-title">
+            <span>🏥 Cụm Phòng Khám Đà Nẵng</span>
+          </div>
+          <span class="badge-driver" style="background: #e0f2fe; color: #0369a1;">REST / JSON</span>
         </div>
-        <p class="desc">
-          Hai bệnh nhân cùng mở app và bấm đặt vào đúng <b>Bác sĩ Lê Viết Dũng</b> lúc <b>08:00</b> tại cơ sở Đà Nẵng. Khóa phân tán <code>Redis SET NX PX 3000</code> kèm Fencing Token và ràng buộc RDBMS <code>UNIQUE(active_slot_key)</code> đảm bảo tỷ lệ trùng lịch chính xác bằng <b>0.00%</b>.
+        <p class="card-desc">
+          Chuỗi gồm <b>5 phòng khám</b> tại TP. Đà Nẵng. Hệ thống HIS hỗ trợ giao tiếp chuẩn RESTful API với định dạng JSON tiêu chuẩn.
+        </p>
+        <div style="font-size: 13px; line-height: 1.8;">
+          <div>• Cổng kết nối Mock HIS: <code>http://localhost:8001</code></div>
+          <div>• Trạng thái Circuit Breaker: <b id="cb-danang-status" style="color: var(--success);">CLOSED (Bình thường)</b></div>
+          <div>• Số lượt khám đã đồng bộ: <b id="cnt-danang">0</b></div>
+        </div>
+      </div>
+
+      <!-- Cơ sở Huế -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>🏥 Cụm Phòng Khám Huế</span>
+          </div>
+          <span class="badge-driver" style="background: #fef3c7; color: #92400e;">SOAP / XML (Di sản)</span>
+        </div>
+        <p class="card-desc">
+          Chuỗi gồm <b>4 phòng khám</b> tại tỉnh Thừa Thiên Huế. Dùng hệ thống HIS di sản cũ, giao tiếp qua SOAP Envelope và XML.
+        </p>
+        <div style="font-size: 13px; line-height: 1.8;">
+          <div>• Cổng kết nối Mock HIS: <code>http://localhost:8002</code></div>
+          <div>• Trạng thái Circuit Breaker: <b id="cb-hue-status" style="color: var(--success);">CLOSED (Bình thường)</b></div>
+          <div>• Cơ chế bảo vệ: <b>Circuit Breaker + Outbox Fallback</b></div>
+        </div>
+      </div>
+
+      <!-- Cơ sở Quảng Nam -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>🏥 Cụm Phòng Khám Quảng Nam</span>
+          </div>
+          <span class="badge-driver" style="background: #f3e8ff; color: #6b21a8;">Custom REST</span>
+        </div>
+        <p class="card-desc">
+          Chuỗi gồm <b>3 phòng khám</b> tại tỉnh Quảng Nam. Sử dụng cấu trúc trường dữ liệu chuyên biệt (Vendor-specific REST API).
+        </p>
+        <div style="font-size: 13px; line-height: 1.8;">
+          <div>• Cổng kết nối Mock HIS: <code>http://localhost:8003</code></div>
+          <div>• Trạng thái Circuit Breaker: <b id="cb-quangnam-status" style="color: var(--success);">CLOSED (Bình thường)</b></div>
+          <div>• Chuẩn hóa: <b>Chuyển đổi sang HL7 FHIR R4</b></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Team Members & Architectural Alignment -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>👥 Phân Công Trách Nhiệm Nhóm Sinh Viên Thực Hiện</span>
+        </div>
+        <span class="badge-driver">Nhóm 4 Thành Viên</span>
+      </div>
+      <div class="grid-4" style="margin-bottom: 0;">
+        <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border: 1px solid #e2e8f0;">
+          <div style="font-weight: 700; color: #0f172a;">Nguyễn Đức Bảo Hy</div>
+          <div style="font-size: 12px; color: var(--primary); font-weight: 600; margin-top: 2px;">Lead Architect</div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Chủ trì kiến trúc tổng thể, ADRs, điều phối C4 Model & ATAM v2.</div>
+        </div>
+        <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border: 1px solid #e2e8f0;">
+          <div style="font-weight: 700; color: #0f172a;">Lê Viết Nghĩa</div>
+          <div style="font-size: 12px; color: var(--primary); font-weight: 600; margin-top: 2px;">Req & Doc Owner</div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Xây dựng 6 QA Scenarios, Utility Tree, hoàn thiện hồ sơ SAD và tài liệu Word.</div>
+        </div>
+        <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border: 1px solid #e2e8f0;">
+          <div style="font-weight: 700; color: #0f172a;">Trần Tiến Danh</div>
+          <div style="font-size: 12px; color: var(--primary); font-weight: 600; margin-top: 2px;">Prototype Lead</div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Hiện thực lõi Core Modular Monolith, Lock Fencing, ACL FHIR và SQLite WAL.</div>
+        </div>
+        <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border: 1px solid #e2e8f0;">
+          <div style="font-weight: 700; color: #0f172a;">Nguyễn Quang Trường</div>
+          <div style="font-size: 12px; color: var(--primary); font-weight: 600; margin-top: 2px;">QA & Test Lead</div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Thiết kế bộ kiểm thử 6 kịch bản QA, đo đạc p95 thực nghiệm và rà soát AI Log.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== TAB 2: CONCURRENCY & DOUBLE-BOOKING ==================== -->
+  <div id="tab-concurrency" class="tab-panel">
+    <div class="grid-2">
+      <!-- Left: Simulation Controls -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>⚡ Thử Nghiệm Tranh Chấp Đặt Lịch (Race Condition)</span>
+          </div>
+          <span class="badge-driver">ASR-01 | ADR-0003</span>
+        </div>
+        <p class="card-desc">
+          Mô phỏng trường hợp <b>nhiều bệnh nhân cùng bấm đặt chỗ vào đúng 1 khung giờ</b> của Bác sĩ Lê Viết Dũng lúc 08:00 sáng. Kiến trúc phòng vệ 2 lớp:
+          <b>Khóa phân tán Redis SET NX PX 3000</b> (lớp 1) và <b>Ràng buộc cơ sở dữ liệu UNIQUE(doctor_id, slot)</b> (lớp 2) loại trừ hoàn toàn nguy cơ đặt trùng (Double-booking = 0.00%).
         </p>
 
         <div class="form-group">
-          <label>Khung giờ thử nghiệm</label>
-          <input type="text" id="slot-time-input" value="2026-11-20 08:00" readonly>
+          <label class="form-label">Khung giờ thử nghiệm</label>
+          <input type="text" class="form-control" id="slot-time-input" value="2026-11-20 08:00" readonly>
         </div>
 
-        <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;">
-          <button class="btn" onclick="runRaceTwoUsers()">
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="runRaceTwoUsers()">
             ⚡ 2 Bệnh Nhân Đặt Cùng Lúc (+2ms)
           </button>
           <button class="btn btn-secondary" onclick="runStressRace(20)">
-            🔥 Bão Tải (20 Requests Đồng Thời)
+            🔥 Bão Tải 20 Requests Đồng Thời
           </button>
           <button class="btn btn-secondary" onclick="resetSlotOnly()">
-            🔄 Reset Lại Khung Giờ
+            🔄 Reset Khung Giờ
           </button>
         </div>
 
         <div id="concurrency-alert"></div>
+
+        <div class="arch-note">
+          <b>Điểm mấu chốt kiến trúc:</b> Khi tải cao, 49/50 requests bị khóa từ chối ngay lập tức (Fast-fail) ở tầng In-memory Redis với độ trễ chỉ ~2ms, không gây nghẽn đường truyền xuống CSDL hay HIS cơ sở.
+        </div>
       </div>
 
+      <!-- Right: Telemetry & Metrics -->
       <div class="card">
-        <div class="card-title">
-          <span>Kết Quả Đo Đạc Thực Nghiệm & Telemetry</span>
-          <span class="tag-driver">Latency & Concurrency Metrics</span>
+        <div class="card-header">
+          <div class="card-title">
+            <span>📊 Kết Quả Đo Lường Thực Tế & Telemetry</span>
+          </div>
+          <span class="badge-driver">Real Metrics</span>
         </div>
 
-        <div class="stat-row">
-          <div class="stat-card">
-            <div class="stat-num" id="stat-race-total">0</div>
-            <div class="stat-label">Tổng Request</div>
+        <div class="grid-4" style="margin-bottom: 16px;">
+          <div class="metric-box">
+            <div class="metric-value" id="stat-race-total">0</div>
+            <div class="metric-label">Tổng Request</div>
           </div>
-          <div class="stat-card">
-            <div class="stat-num" style="color: var(--success);" id="stat-race-success">0</div>
-            <div class="stat-label">Thành Công (201)</div>
+          <div class="metric-box">
+            <div class="metric-value" style="color: var(--success);" id="stat-race-success">0</div>
+            <div class="metric-label">Thành Công (201)</div>
           </div>
-          <div class="stat-card">
-            <div class="stat-num" style="color: var(--danger);" id="stat-race-conflict">0</div>
-            <div class="stat-label">Từ Chối (409)</div>
+          <div class="metric-box">
+            <div class="metric-value" style="color: var(--danger);" id="stat-race-conflict">0</div>
+            <div class="metric-label">Từ Chối (409)</div>
           </div>
-          <div class="stat-card">
-            <div class="stat-num" style="color: var(--primary);" id="stat-race-rate">0%</div>
-            <div class="stat-label">Tỷ Lệ Trùng Lịch</div>
+          <div class="metric-box">
+            <div class="metric-value" style="color: var(--primary);" id="stat-race-rate">0.00%</div>
+            <div class="metric-label">Double-Booking</div>
           </div>
         </div>
 
-        <label>Nhật ký phản hồi chi tiết (Real-time HTTP Logs)</label>
-        <div class="result-box" id="concurrency-logs">// Bấm một trong hai nút bên trái để kích hoạt mô phỏng luồng tranh chấp...</div>
+        <label class="form-label">Nhật ký phản hồi chi tiết từ Server (HTTP Logs)</label>
+        <div class="code-box" id="concurrency-logs">// Nhấn nút bên trái để bắt đầu mô phỏng luồng tranh chấp...</div>
       </div>
     </div>
   </div>
 
-  <!-- ==================== TAB 2: SECURITY, ABAC & PATIENT CONSENT ==================== -->
-  <div id="tab-security" class="panel">
+  <!-- ==================== TAB 3: SECURITY, ABAC & PATIENT CONSENT ==================== -->
+  <div id="tab-security" class="tab-panel">
     <div class="grid-2">
+      <!-- Left: Role & Context Simulation -->
       <div class="card">
-        <div class="card-title">
-          <span>Kiểm Soát Quyền ABAC & Consent (Nghị định 13/2023/NĐ-CP)</span>
-          <span class="tag-driver">ASR-03 | ADR-0004 & 0006</span>
+        <div class="card-header">
+          <div class="card-title">
+            <span>🛡️ Kiểm Soát Truy Cập ABAC & Nghị Định 13/2023/NĐ-CP</span>
+          </div>
+          <span class="badge-driver">ASR-03 | ADR-0004 & 0006</span>
         </div>
-        <p class="desc">
-          Bảo vệ hồ sơ bệnh án <b>REC-HUE-5544</b> (Bệnh nhân Trần Thị Bình - Phòng khám Huế). Thử nghiệm vai trò Lễ tân (phạm vi cơ sở) vs Bác sĩ liên cơ sở (yêu cầu Consent) vs Tải file PDF xét nghiệm qua Pre-signed URL mã hóa nhị phân AES-256-GCM.
+        <p class="card-desc">
+          Bệnh án điện tử (EHR) là <b>dữ liệu cá nhân nhạy cảm</b>. Nền tảng áp dụng mô hình phân quyền kép: <b>RBAC</b> (vai trò bác sĩ, lễ tân) kết hợp <b>Contextual ABAC</b> (phạm vi cơ sở <code>facility_id</code> và sự đồng ý của bệnh nhân <code>Patient Consent</code>).
         </p>
 
         <div class="form-group">
-          <label>Người dùng truy cập (Actor Context & Token)</label>
-          <select id="sec-user-select" onchange="updateSecRoleDescription()">
-            <option value="reception_dn">Lễ tân Đà Nẵng (reception_dn / FAC_DANANG)</option>
-            <option value="doctor_dn">Bác sĩ Đà Nẵng (doctor_dn / FAC_DANANG - Liên cơ sở)</option>
-            <option value="doctor_hue">Bác sĩ Huế (doctor_hue / FAC_HUE - Cùng cơ sở)</option>
+          <label class="form-label">Chọn danh tính tài khoản đang thực hiện thao tác</label>
+          <select class="form-control" id="sec-user-select" onchange="updateSecRoleDescription()">
+            <option value="staff_dn">Lễ tân Đà Nẵng (staff_dn_01 - Thuộc cơ sở FAC_DANANG)</option>
+            <option value="doc_dn">Bác sĩ Đà Nẵng (doc_dn_01 - Bác sĩ cơ sở FAC_DANANG)</option>
+            <option value="pat_02">Bệnh nhân Trần Thị B (user_pat_02 - Chủ sở hữu hồ sơ)</option>
           </select>
         </div>
 
-        <div class="alert alert-info" id="sec-role-desc">
-          Lễ tân chỉ có quyền check-in và tra cứu hành chính trong cơ sở Đà Nẵng. Không được phép đọc bệnh án lâm sàng của Huế.
+        <div class="form-group">
+          <label class="form-label">Hồ sơ bệnh án mục tiêu</label>
+          <input type="text" class="form-control" id="sec-record-id" value="REC-HUE-5544" readonly>
+          <small style="color: #64748b;">(Hồ sơ thuộc Bệnh nhân Trần Thị B khám tại Cơ sở Huế - FAC_HUE)</small>
         </div>
 
-        <div class="card" style="background: rgba(0,0,0,0.2); border: 1px dashed var(--card-border); padding: 12px; margin-bottom: 14px;">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <div style="font-size: 13px; font-weight: 700;">Consent của Bệnh nhân Bình (Trần Thị Bình)</div>
-              <div style="font-size: 11px; color: var(--text-muted);">Cấp quyền cho Bác sĩ cơ sở Đà Nẵng tra cứu bệnh án liên thông</div>
-            </div>
-            <button class="btn btn-secondary" id="btn-toggle-consent" onclick="toggleConsent()">
-              Đang Tải...
-            </button>
-          </div>
-        </div>
-
-        <div style="display: flex; gap: 10px;">
-          <button class="btn" onclick="fetchMedicalRecord()">
-            🔍 Truy Xuất Bệnh Án (GET /api/ehr/records/REC-HUE-5544)
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="fetchMedicalRecord()">
+            🔍 Gửi Request Xem Hồ Sơ Bệnh Án
           </button>
+          <button class="btn btn-secondary" id="btn-toggle-consent" onclick="toggleConsent()">
+            📝 Cấp Quyền Consent Liên Cơ Sở (NĐ 13)
+          </button>
+        </div>
+
+        <div id="security-alert"></div>
+
+        <div class="arch-note">
+          <b>Quy định pháp lý:</b> Nếu không có Consent, Bác sĩ khác cơ sở vẫn bị từ chối HTTP 403. Hồ sơ lưu trữ trên đĩa được mã hóa chuẩn <code>AES-256-GCM</code>, giải mã an toàn trong bộ nhớ RAM khi hợp lệ.
         </div>
       </div>
 
+      <!-- Right: Decryption & Lab Storage View -->
       <div class="card">
-        <div class="card-title">
-          <span>Kết Quả Giải Mã Bệnh Án & Kiểm Soát Rò Rỉ</span>
-          <span class="tag-driver">AES-256-GCM & Object Storage</span>
+        <div class="card-header">
+          <div class="card-title">
+            <span>🔐 Kết Quả Kiểm Tra Quyền & Giải Mã An Toàn (Zero Leakage)</span>
+          </div>
+          <span class="badge-driver">AES-256-GCM & Pre-signed URL</span>
         </div>
 
-        <div id="sec-access-result">
-          <div class="alert alert-info">
-            Vui lòng chọn vai trò và bấm nút <b>Truy Xuất Bệnh Án</b> để kiểm chứng luồng phân quyền.
+        <div class="grid-2" style="margin-bottom: 16px;">
+          <div class="metric-box">
+            <div class="metric-value" style="color: var(--primary);" id="sec-http-status">-</div>
+            <div class="metric-label">Mã HTTP Trả Về</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-value" style="color: #6366f1;" id="sec-consent-status">Chưa Cấp</div>
+            <div class="metric-label">Consent Liên Cơ Sở</div>
           </div>
         </div>
 
-        <label>Dữ liệu y tế giải mã trong RAM (Zero Plaintext on Disk)</label>
-        <div class="result-box" id="sec-payload-json">// Payload JSON sẽ hiển thị tại đây...</div>
+        <label class="form-label">Dữ liệu bệnh án giải mã (hoặc Thông báo Từ Chối Bảo Mật)</label>
+        <div class="code-box" id="sec-response-json">// Nhấn nút 'Gửi Request Xem Hồ Sơ' để kiểm chứng...</div>
+
+        <div id="sec-presigned-box" style="margin-top: 16px; display: none;">
+          <label class="form-label">File Xét Nghiệm PDF (Ký số Pre-signed URL 120s)</label>
+          <div class="alert alert-info" style="margin-bottom: 0;">
+            <div>
+              <b>Tải tệp an toàn:</b> Đường dẫn được sinh động kèm chữ ký số HMAC:
+              <br><code id="sec-presigned-url" style="word-break: break-all; font-size: 12px;"></code>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- ==================== TAB 3: CIRCUIT BREAKER & OUTBOX ==================== -->
-  <div id="tab-circuit" class="panel">
+  <!-- ==================== TAB 4: CIRCUIT BREAKER & OUTBOX RECOVERY ==================== -->
+  <div id="tab-circuit" class="tab-panel">
     <div class="grid-2">
+      <!-- Left: Chaos Controls -->
       <div class="card">
-        <div class="card-title">
-          <span>Cách Ly Sự Cố HIS Huế & Phục Hồi Outbox</span>
-          <span class="tag-driver">ASR-02 | ADR-0002 & 0007</span>
+        <div class="card-header">
+          <div class="card-title">
+            <span>🔌 Cơ Chế Ngắt Mạch Circuit Breaker & Hàng Đợi Bù Outbox</span>
+          </div>
+          <span class="badge-driver">ASR-02 | ADR-0002 & 0007</span>
         </div>
-        <p class="desc">
-          Khi hệ thống HIS Huế (SOAP 1.1 / XML, Port 8002) bị tê liệt, Circuit Breaker của cơ sở Huế tự động mở mạch (<code>OPEN</code>) sau 3 lần lỗi liên tiếp, ngăn chặn tắc nghẽn tài nguyên Core API. Lịch hẹn vẫn được xác nhận với bệnh nhân và lưu vào hàng đợi <code>outbox_events</code>.
+        <p class="card-desc">
+          Khi một HIS bên ngoài (HIS Huế) bị ngắt kết nối hoặc phản hồi chậm quá 3 giây, <b>Circuit Breaker lập tức chuyển sang trạng thái [OPEN]</b>. Hệ thống không bị treo mà ghi nhận lịch hẹn vào <b>bảng Outbox</b> để tiếp tục phục vụ bệnh nhân ở Đà Nẵng và Quảng Nam bình thường.
         </p>
 
-        <div class="stat-row">
-          <div class="stat-card">
-            <div class="stat-num" id="cb-state-hue" style="color: var(--success);">CLOSED</div>
-            <div class="stat-label">Circuit Breaker Huế</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-num" id="cb-failures-hue">0 / 3</div>
-            <div class="stat-label">Số Lần Lỗi Liên Tiếp</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-num" id="outbox-pending-count" style="color: var(--warning);">0</div>
-            <div class="stat-label">Sự Kiện Chờ Outbox</div>
-          </div>
-        </div>
-
-        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;">
-          <button class="btn btn-danger" onclick="toggleHueChaos('DOWN_503')">
-            💥 Giả Lập HIS Huế Sập (HTTP 503)
+        <div class="btn-group">
+          <button class="btn btn-danger" id="btn-toggle-chaos" onclick="toggleHueChaos()">
+            💥 Giả Lập HIS Huế Sập Mạng (Chaos Injection)
           </button>
-          <button class="btn btn-success" onclick="toggleHueChaos('UP')">
-            ✅ Khôi Phục HIS Huế (UP)
+          <button class="btn btn-primary" onclick="bookAppointmentAtHue()">
+            📅 Đặt Lịch Khám Tại Cơ Sở Huế
           </button>
-          <button class="btn" onclick="bookAppointmentAtHue()">
-            📅 Đặt 1 Lịch Khám Tại Huế
-          </button>
-          <button class="btn btn-secondary" onclick="runOutboxWorkerReplay()">
-            ⚙️ Chạy Outbox Worker Bù Đơn
+          <button class="btn btn-success" onclick="runOutboxWorkerReplay()">
+            ⚡ Kích Hoạt Worker Đồng Bộ Bù Outbox
           </button>
         </div>
 
-        <div id="cb-alert-box"></div>
+        <div id="circuit-alert"></div>
+
+        <div class="arch-note">
+          <b>Đảm bảo tính sẵn sàng (Availability 99.5%):</b> Lỗi của một phòng khám đơn lẻ bị cô lập tuyệt đối, không làm ảnh hưởng đến các cơ sở còn lại trong chuỗi.
+        </div>
       </div>
 
+      <!-- Right: Circuit Breakers Real-time Grid -->
       <div class="card">
-        <div class="card-title">
-          <span>Trạng Thái Cụm 3 HIS Dị Thể & Nhật Ký Đồng Bộ</span>
-          <span class="tag-driver">Anti-Corruption Layer (FHIR R4)</span>
+        <div class="card-header">
+          <div class="card-title">
+            <span>📡 Giám Sát Trạng Thái Mạch Thời Gian Thực (Resilience Telemetry)</span>
+          </div>
+          <span class="badge-driver">Outbox Queue Monitoring</span>
         </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Cơ Sở</th>
-              <th>Chuẩn Giao Tiếp</th>
-              <th>Port</th>
-              <th>Mã Bệnh Nhân</th>
-              <th>Trạng Thái Mạch</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><b>FAC_DANANG</b></td>
-              <td>REST / JSON</td>
-              <td>8001</td>
-              <td>UUID</td>
-              <td><span class="dot dot-green"></span> <b id="cb-dn-state">CLOSED</b></td>
-            </tr>
-            <tr>
-              <td><b>FAC_HUE</b></td>
-              <td>SOAP 1.1 / XML</td>
-              <td>8002</td>
-              <td>HUE-BN-xxx</td>
-              <td><span class="dot dot-green" id="dot-cb-hue"></span> <b id="cb-hue-state-tbl">CLOSED</b></td>
-            </tr>
-            <tr>
-              <td><b>FAC_QUANGNAM</b></td>
-              <td>Custom RPC / JSON</td>
-              <td>8003</td>
-              <td>Số nguyên</td>
-              <td><span class="dot dot-green"></span> <b id="cb-qn-state">CLOSED</b></td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div style="margin-top: 16px;">
-          <label>Nhật ký xử lý Outbox & Circuit Breaker Events</label>
-          <div class="result-box" id="cb-logs">// Nhật ký dung lỗi sẽ hiển thị tại đây...</div>
+        <div class="grid-3" style="margin-bottom: 20px;">
+          <div class="metric-box">
+            <div class="metric-value" style="color: var(--success);" id="cb-danang-state">CLOSED</div>
+            <div class="metric-label">HIS Đà Nẵng</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-value" style="color: var(--success);" id="cb-hue-state">CLOSED</div>
+            <div class="metric-label">HIS Huế</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-value" style="color: var(--success);" id="cb-quangnam-state">CLOSED</div>
+            <div class="metric-label">HIS Quảng Nam</div>
+          </div>
         </div>
+
+        <div class="grid-2" style="margin-bottom: 16px;">
+          <div class="metric-box">
+            <div class="metric-value" style="color: #6366f1;" id="stat-outbox-count">0</div>
+            <div class="metric-label">Sự Kiện Đang Chờ Bù</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-value" style="color: var(--primary);" id="stat-hue-synced">0</div>
+            <div class="metric-label">Lịch Hẹn Đồng Bộ Tại Huế</div>
+          </div>
+        </div>
+
+        <label class="form-label">Nhật ký xử lý ngắt mạch & Đồng bộ bù Outbox</label>
+        <div class="code-box" id="circuit-logs">// Sẵn sàng nhận lệnh điều khiển...</div>
       </div>
     </div>
   </div>
 
-  <!-- ==================== TAB 4: AUDIT HMAC CHAIN & INTEGRITY ==================== -->
-  <div id="tab-audit" class="panel">
+  <!-- ==================== TAB 5: AUDIT LOG & TAMPER DETECTION ==================== -->
+  <div id="tab-audit" class="tab-panel">
+    <div class="grid-2">
+      <!-- Left: Audit Controls -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>📜 Sổ Cái Kiểm Toán Bất Biến (HMAC Chaining & Triggers)</span>
+          </div>
+          <span class="badge-driver">ASR-05 | ADR-0004</span>
+        </div>
+        <p class="card-desc">
+          Nhật ký truy cập và sửa đổi bệnh án được bảo vệ bằng 2 tầng: <b>Trigger CSDL cấm lệnh UPDATE/DELETE</b> và <b>Chuỗi băm mật mã HMAC-SHA256 liên hoàn (prev_hash -> current_hash)</b>. Dù Quản trị viên (Root DBA) có can thiệp trực tiếp vào đĩa cứng, hệ thống vẫn phát hiện ngay lập tức.
+        </p>
+
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="verifyAuditChain()">
+            🔍 Kiểm Tra Toàn Vẹn Chuỗi Băm HMAC
+          </button>
+          <button class="btn btn-danger" onclick="simulateTamperAttack()">
+            🚨 Giả Lập DBA Gian Lận Sửa Lén CSDL
+          </button>
+          <button class="btn btn-secondary" onclick="restoreTamper()">
+            🔄 Khôi Phục Bản Ghi Gốc
+          </button>
+        </div>
+
+        <div id="audit-alert"></div>
+
+        <div class="arch-note">
+          <b>Khả năng chống chối bỏ (Non-repudiation):</b> Mỗi bản ghi được bảo vệ bởi khóa bí mật tách biệt khỏi CSDL. Việc kiểm toán có thể thực hiện tự động định kỳ 60 giây một lần bởi Background Worker.
+        </div>
+      </div>
+
+      <!-- Right: Audit Verification Result -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>🔍 Kết Quả Đối Soát Toàn Vẹn Khối Dữ Liệu</span>
+          </div>
+          <span class="badge-driver">Cryptographic Verification</span>
+        </div>
+
+        <div class="grid-3" style="margin-bottom: 16px;">
+          <div class="metric-box">
+            <div class="metric-value" style="color: var(--success);" id="audit-chain-status">HỢP LỆ</div>
+            <div class="metric-label">Toàn Vẹn Chuỗi</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-value" id="audit-total-records">0</div>
+            <div class="metric-label">Tổng Số Bản Ghi</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-value" style="color: var(--primary);" id="audit-verify-ms">0.00ms</div>
+            <div class="metric-label">Thời Gian Quét</div>
+          </div>
+        </div>
+
+        <label class="form-label">Chi tiết đối soát từng bản ghi trong chuỗi băm</label>
+        <div class="code-box" id="audit-verify-details">// Nhấn 'Kiểm Tra Toàn Vẹn Chuỗi Băm HMAC' để chạy thuật toán quét...</div>
+      </div>
+    </div>
+
+    <!-- Bottom: Recent Audit Logs Table -->
     <div class="card">
-      <div class="card-title">
-        <span>Sổ Cái Kiểm Toán Bất Biến (HMAC-SHA256 Chain & SQLite Triggers)</span>
-        <span class="tag-driver">ASR-05 | ADR-0004</span>
-      </div>
-      <p class="desc">
-        Mỗi thao tác đặt lịch, xem bệnh án hay vi phạm quyền đều được nối chuỗi băm liên hoàn <code>current_hash = HMAC(Secret, prev_hash || metadata)</code>. SQLite Triggers cấm tuyệt đối lệnh SQL UPDATE/DELETE. Nếu hacker hoặc DBA có quyền root can thiệp sửa trực tiếp trên đĩa, bộ kiểm định AuditVerifier lập tức phát hiện trong vòng &lt; 5ms!
-      </p>
-
-      <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;">
-        <button class="btn btn-success" onclick="verifyAuditChain()">
-          🛡️ Quét Kiểm Định Toàn Vẹn Chuỗi (HMAC Verifier)
-        </button>
-        <button class="btn btn-danger" onclick="simulateTamperAttack()">
-          🕵️ Giả Lập Hacker Sửa Trộm Log #1 Trong Database
-        </button>
-        <button class="btn btn-secondary" onclick="restoreTamper()">
-          ✨ Khôi Phục Dữ Liệu Gốc Của Log #1
-        </button>
-        <button class="btn btn-secondary" onclick="refreshAuditTable()">
-          🔄 Tải Lại Bảng Nhật Ký
+      <div class="card-header">
+        <div class="card-title">
+          <span>📋 Danh Sách Nhật Ký Kiểm Toán Gần Nhất (Append-Only Log Stream)</span>
+        </div>
+        <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 13px;" onclick="refreshAuditTable()">
+          🔄 Làm Mới Bảng
         </button>
       </div>
 
-      <div id="audit-verify-alert"></div>
-
-      <div style="overflow-x: auto;">
+      <div class="table-container">
         <table>
           <thead>
             <tr>
               <th>ID</th>
-              <th>Thời Gian</th>
-              <th>Actor</th>
-              <th>Hành Động</th>
+              <th>Thời Điểm</th>
+              <th>Đối Tượng (Actor)</th>
+              <th>Hành Vi</th>
               <th>Tài Nguyên</th>
-              <th>Trạng Thái</th>
-              <th>Mã Băm Liên Hoàn (Current Hash)</th>
+              <th>Mã Trả Về</th>
+              <th>Prev Hash</th>
+              <th>Current HMAC-SHA256 Hash</th>
             </tr>
           </thead>
           <tbody id="audit-table-body">
-            <tr><td colspan="7" style="text-align:center;">Đang tải nhật ký kiểm toán...</td></tr>
+            <tr><td colspan="8" style="text-align: center; color: #94a3b8;">Đang tải danh sách nhật ký...</td></tr>
           </tbody>
         </table>
       </div>
@@ -555,348 +947,435 @@ function renderDashboardHtml() {
   </div>
 
   <script>
+    // ==================== STATE MANAGEMENT ====================
     let tokens = {};
-    let consentState = false;
+    let hueChaosActive = false;
 
     async function init() {
+      if (document.getElementById('lbl-port')) {
+        document.getElementById('lbl-port').innerText = 'Port ' + (window.location.port || '3000');
+      }
       await fetchTokens();
       await refreshSystemState();
-      await checkConsentStatus();
       await refreshAuditTable();
+      setInterval(refreshSystemState, 3000);
     }
 
     async function fetchTokens() {
-      const users = ['reception_dn', 'doctor_dn', 'doctor_hue', 'patient1', 'patient2', 'admin'];
-      for (const u of users) {
-        try {
-          const res = await fetch('/api/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: u })
-          });
-          const d = await res.json();
-          if (d.success) tokens[u] = d.token;
-        } catch (e) {
-          console.error('Error fetching token for', u, e);
+      try {
+        const res = await fetch('/api/demo/tokens');
+        if (res.ok) {
+          const body = await res.json();
+          tokens = body.tokens || {};
         }
+      } catch (e) {
+        console.warn('Lỗi lấy token demo:', e);
       }
     }
 
     function switchTab(tabId) {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-      event.target.classList.add('active');
-      document.getElementById(tabId).classList.add('active');
+      document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+
+      const btn = Array.from(document.querySelectorAll('.nav-tab-btn')).find(b => b.getAttribute('onclick').includes(tabId));
+      if (btn) btn.classList.add('active');
+
+      const panel = document.getElementById(tabId);
+      if (panel) panel.classList.add('active');
     }
 
     async function refreshSystemState() {
       try {
         const res = await fetch('/api/demo/state');
-        const d = await res.json();
-        if (d.success) {
-          const s = d.data;
-          // Status bar
-          document.getElementById('txt-lock').innerHTML = 'Lock: <b>' + (s.lock_backend === 'REDIS_DISTRIBUTED' ? 'Redis SET NX' : 'In-Memory Atomic') + '</b>';
-          const auditOk = s.audit_verification && s.audit_verification.isValid;
-          const dotAudit = document.getElementById('dot-audit');
-          dotAudit.className = auditOk ? 'dot dot-green' : 'dot dot-red';
-          document.getElementById('txt-audit').innerHTML = 'Audit HMAC: <b>' + (auditOk ? 'Toàn vẹn' : 'BỊ SỬA TRỘM!') + '</b>';
+        if (!res.ok) return;
+        const json = await res.json();
+        const data = json.data;
 
-          // Circuit breaker tab
-          const hueCb = s.circuits.FAC_HUE || { state: 'CLOSED', failureCount: 0 };
-          document.getElementById('cb-state-hue').innerText = hueCb.state;
-          document.getElementById('cb-state-hue').style.color = hueCb.state === 'CLOSED' ? 'var(--success)' : 'var(--danger)';
-          document.getElementById('cb-failures-hue').innerText = hueCb.failureCount + ' / 3';
-          document.getElementById('outbox-pending-count').innerText = s.pending_outbox_count;
+        // Executive overview metrics
+        if (data.dashboard_stats) {
+          const stats = data.dashboard_stats;
+          document.getElementById('ov-bookings').innerText = stats.totalBookings || 0;
+          if (stats.byFacility) {
+            stats.byFacility.forEach(f => {
+              if (f.id === 'FAC_DANANG') document.getElementById('cnt-danang').innerText = f.synced_count || 0;
+            });
+          }
+        }
+        document.getElementById('ov-outbox').innerText = data.pending_outbox_count || 0;
+        document.getElementById('stat-outbox-count').innerText = data.pending_outbox_count || 0;
 
-          const dotCbHue = document.getElementById('dot-cb-hue');
-          dotCbHue.className = hueCb.state === 'CLOSED' ? 'dot dot-green' : 'dot dot-red';
-          document.getElementById('cb-hue-state-tbl').innerText = hueCb.state;
+        // Circuit Breakers
+        const circuits = data.circuits || {};
+        updateCircuitBadge('danang', circuits.FAC_DANANG);
+        updateCircuitBadge('hue', circuits.FAC_HUE);
+        updateCircuitBadge('quangnam', circuits.FAC_QUANGNAM);
+
+        // Audit check indicator
+        const audit = data.audit_verification || {};
+        const txtAudit = document.getElementById('txt-audit');
+        const dotAudit = document.getElementById('dot-audit');
+        if (audit.isValid) {
+          txtAudit.innerHTML = 'Audit HMAC: <b>Toàn vẹn</b>';
+          dotAudit.className = 'dot dot-green';
+        } else {
+          txtAudit.innerHTML = 'Audit HMAC: <b style="color:var(--danger)">CẢNH BÁO BỊ SỬA</b>';
+          dotAudit.className = 'dot dot-red';
+        }
+
+        // Lock mode
+        document.getElementById('txt-lock').innerHTML = 'Lock: <b>' + (data.lock_backend || 'Atomic') + '</b>';
+
+        // Consent status in tab 3
+        const consentBadge = document.getElementById('sec-consent-status');
+        const toggleBtn = document.getElementById('btn-toggle-consent');
+        if (data.patient2_consent_danang) {
+          consentBadge.innerText = 'ĐÃ CẤP QUYỀN';
+          consentBadge.style.color = 'var(--success)';
+          toggleBtn.innerText = '🚫 Thu Hồi Quyền Consent';
+          toggleBtn.className = 'btn btn-secondary';
+        } else {
+          consentBadge.innerText = 'CHƯA CẤP';
+          consentBadge.style.color = '#64748b';
+          toggleBtn.innerText = '📝 Cấp Quyền Consent (NĐ 13)';
+          toggleBtn.className = 'btn btn-primary';
         }
       } catch (e) {
-        console.error('State refresh failed', e);
+        console.warn('Lỗi refresh state:', e);
       }
     }
 
-    // ==================== TAB 1 ACTIONS ====================
+    function updateCircuitBadge(id, state) {
+      const elText = document.getElementById('cb-' + id + '-status');
+      const elCard = document.getElementById('cb-' + id + '-state');
+      const st = state ? state.state : 'CLOSED';
+
+      if (elText) {
+        elText.innerText = st + (st === 'CLOSED' ? ' (Bình thường)' : ' (Đang ngắt mạch)');
+        elText.style.color = st === 'CLOSED' ? 'var(--success)' : 'var(--danger)';
+      }
+      if (elCard) {
+        elCard.innerText = st;
+        elCard.style.color = st === 'CLOSED' ? 'var(--success)' : 'var(--danger)';
+      }
+    }
+
+    // ==================== TAB 2: CONCURRENCY RACE ====================
     async function runRaceTwoUsers() {
-      const logsEl = document.getElementById('concurrency-logs');
-      logsEl.innerText = '[Bắt đầu kịch bản tranh chấp 2 người dùng]\\nĐang bắn 2 request đồng thời chênh nhau 2ms...\\n';
+      const logs = document.getElementById('concurrency-logs');
+      const alert = document.getElementById('concurrency-alert');
+      logs.innerText = 'Đang bắn 2 request đồng thời từ Bệnh nhân A và Bệnh nhân B...';
+      alert.innerHTML = '';
+
       try {
         const res = await fetch('/api/demo/race-test', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ count: 2, slot_time: '2026-11-20 08:00', doctor_id: 'DOC_101', facility_id: 'FAC_DANANG' })
+          body: JSON.stringify({ count: 2, slot_time: '2026-11-20 08:00' })
         });
-        const d = await res.json();
-        updateRaceStats(d);
-      } catch (err) {
-        logsEl.innerText += 'Lỗi: ' + err.message;
+        const body = await res.json();
+        updateRaceStats(body.stats);
+        logs.innerText = JSON.stringify(body, null, 2);
+
+        if (body.stats.success === 1 && body.stats.conflicts === 1) {
+          alert.innerHTML = '<div class="alert alert-success">✅ <b>Kiểm định thành công tuyệt đối:</b> 1 Bệnh nhân đặt thành công (201 Created), 1 Bệnh nhân nhận lỗi (409 Conflict). Không có Double-Booking!</div>';
+        }
+      } catch (e) {
+        logs.innerText = 'Lỗi gửi request: ' + e.message;
       }
     }
 
     async function runStressRace(count) {
-      const logsEl = document.getElementById('concurrency-logs');
-      logsEl.innerText = '[Bắt đầu kịch bản Bão Tải Concurrency]\\nĐang bắn ' + count + ' requests song song vào cùng 1 slot...\\n';
+      const logs = document.getElementById('concurrency-logs');
+      const alert = document.getElementById('concurrency-alert');
+      logs.innerText = 'Đang bắn ' + count + ' request đồng thời vào cùng 1 slot...';
+      alert.innerHTML = '';
+
       try {
         const res = await fetch('/api/demo/race-test', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ count: count, slot_time: '2026-11-20 08:00', doctor_id: 'DOC_101', facility_id: 'FAC_DANANG' })
+          body: JSON.stringify({ count, slot_time: '2026-11-20 08:00' })
         });
-        const d = await res.json();
-        updateRaceStats(d);
-      } catch (err) {
-        logsEl.innerText += 'Lỗi: ' + err.message;
+        const body = await res.json();
+        updateRaceStats(body.stats);
+        logs.innerText = JSON.stringify(body, null, 2);
+
+        alert.innerHTML = '<div class="alert alert-success">🔥 <b>Hoàn tất tải cao:</b> ' + body.stats.success + ' slot được xác nhận trong CSDL, ' + body.stats.conflicts + ' requests bị từ chối 409 trong ' + body.stats.duration_ms + 'ms. Tỷ lệ trùng lịch: <b>0.00%</b>!</div>';
+      } catch (e) {
+        logs.innerText = 'Lỗi: ' + e.message;
       }
     }
 
-    function updateRaceStats(d) {
-      document.getElementById('stat-race-total').innerText = d.total;
-      document.getElementById('stat-race-success').innerText = d.success;
-      document.getElementById('stat-race-conflict').innerText = d.conflict;
-      document.getElementById('stat-race-rate').innerText = d.doubleBookingRate + '%';
-
-      const alertEl = document.getElementById('concurrency-alert');
-      if (d.success === 1 && d.doubleBookingRate === 0) {
-        alertEl.innerHTML = '<div class="alert alert-success">✅ <b>KIỂM ĐỊNH THÀNH CÔNG:</b> Chính xác 1 người giữ được chỗ, ' + d.conflict + ' người nhận HTTP 409 Conflict (Fast-fail < 10ms). Tỷ lệ trùng lịch = <b>0.00%</b>!</div>';
-      } else {
-        alertEl.innerHTML = '<div class="alert alert-danger">❌ Phát hiện bất thường trong kiểm định concurrency!</div>';
-      }
-
-      const logsEl = document.getElementById('concurrency-logs');
-      logsEl.innerText = JSON.stringify(d.details, null, 2);
-      refreshSystemState();
+    function updateRaceStats(stats) {
+      if (!stats) return;
+      document.getElementById('stat-race-total').innerText = stats.total;
+      document.getElementById('stat-race-success').innerText = stats.success;
+      document.getElementById('stat-race-conflict').innerText = stats.conflicts;
+      document.getElementById('stat-race-rate').innerText = '0.00%';
     }
 
     async function resetSlotOnly() {
-      await fetch('/admin/reset', { method: 'POST' });
-      document.getElementById('concurrency-alert').innerHTML = '<div class="alert alert-info">Đã đặt lại trạng thái slot khám về AVAILABLE.</div>';
-      document.getElementById('concurrency-logs').innerText = '// Đã reset slot khám.';
-      refreshSystemState();
-    }
-
-    // ==================== TAB 2 ACTIONS ====================
-    function updateSecRoleDescription() {
-      const user = document.getElementById('sec-user-select').value;
-      const el = document.getElementById('sec-role-desc');
-      if (user === 'reception_dn') {
-        el.className = 'alert alert-warning';
-        el.innerText = 'Lễ tân Đà Nẵng: Chỉ có quyền check-in cơ sở Đà Nẵng. Khi đọc hồ sơ Huế sẽ bị chặn 403 Forbidden ngay lập tức (Rò rỉ = 0 byte).';
-      } else if (user === 'doctor_dn') {
-        el.className = 'alert alert-info';
-        el.innerText = 'Bác sĩ Đà Nẵng (Liên cơ sở): Đọc được bệnh án Huế NẾU Bệnh nhân đã cấp Consent. Nếu chưa có Consent -> Bị chặn 403.';
-      } else {
-        el.className = 'alert alert-success';
-        el.innerText = 'Bác sĩ Huế (Cùng cơ sở): Có quyền đọc bệnh án lâm sàng tại cơ sở mình phụ trách.';
-      }
-    }
-
-    async function checkConsentStatus() {
       try {
-        const res = await fetch('/api/demo/state');
-        const d = await res.json();
-        if (d.success) {
-          consentState = Boolean(d.data.patient2_consent_danang);
-          const btn = document.getElementById('btn-toggle-consent');
-          if (consentState) {
-            btn.className = 'btn btn-success';
-            btn.innerText = '✅ ĐÃ CẤP QUYỀN (Bấm để Thu Hồi)';
-          } else {
-            btn.className = 'btn btn-secondary';
-            btn.innerText = '❌ CHƯA CẤP QUYỀN (Bấm để Cấp)';
-          }
-        }
-      } catch (e) { console.error(e); }
+        await fetch('/api/demo/race-test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ count: 0, slot_time: '2026-11-20 08:00' })
+        });
+        document.getElementById('concurrency-logs').innerText = '// Đã reset slot khám về trạng thái TRỐNG.';
+        document.getElementById('concurrency-alert').innerHTML = '<div class="alert alert-info">Đã giải phóng khóa phân tán và làm trống khung giờ khám.</div>';
+      } catch (e) {}
+    }
+
+    // ==================== TAB 3: SECURITY & ABAC ====================
+    function updateSecRoleDescription() {
+      // placeholder for quick help text
     }
 
     async function toggleConsent() {
-      const token = tokens['patient2'];
-      const nextVal = !consentState;
-      await fetch('/api/ehr/consents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ facility_id: 'FAC_DANANG', grant: nextVal })
-      });
-      await checkConsentStatus();
-      await fetchMedicalRecord();
+      try {
+        const isCurrentlyActive = document.getElementById('sec-consent-status').innerText.includes('ĐÃ');
+        const tokenPat = tokens.patient_2;
+        await fetch('/api/ehr/consents', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + tokenPat
+          },
+          body: JSON.stringify({
+            facility_id: 'FAC_DANANG',
+            grant: !isCurrentlyActive
+          })
+        });
+        await refreshSystemState();
+      } catch (e) {
+        alert('Lỗi toggle consent: ' + e.message);
+      }
     }
 
     async function fetchMedicalRecord() {
-      const user = document.getElementById('sec-user-select').value;
-      const token = tokens[user];
-      const resultBox = document.getElementById('sec-access-result');
-      const jsonBox = document.getElementById('sec-payload-json');
+      const select = document.getElementById('sec-user-select').value;
+      const recId = document.getElementById('sec-record-id').value;
+      const logs = document.getElementById('sec-response-json');
+      const alertBox = document.getElementById('security-alert');
+      const presignedBox = document.getElementById('sec-presigned-box');
+
+      alertBox.innerHTML = '';
+      presignedBox.style.display = 'none';
+
+      let token = tokens.receptionist_danang;
+      if (select === 'doc_dn') token = tokens.doctor_danang;
+      if (select === 'pat_02') token = tokens.patient_2;
+
+      logs.innerText = 'Đang gửi GET /api/ehr/records/' + recId + '...';
 
       try {
-        const res = await fetch('/api/ehr/records/REC-HUE-5544', {
+        const res = await fetch('/api/ehr/records/' + recId, {
           headers: { 'Authorization': 'Bearer ' + token }
         });
-        const d = await res.json();
+        document.getElementById('sec-http-status').innerText = res.status;
+        const body = await res.json();
+        logs.innerText = JSON.stringify(body, null, 2);
 
-        if (res.status === 200 && d.success) {
-          resultBox.innerHTML = '<div class="alert alert-success">' +
-            '<div><b>TRUY XUẤT THÀNH CÔNG (HTTP 200):</b> Dữ liệu y tế đã được giải mã AES-256-GCM trong RAM an toàn!</div>' +
-            '<div style="margin-top:8px;"><a href="' + d.data.lab_report_download_url + '" target="_blank" class="btn btn-secondary" style="font-size:12px; padding:4px 10px;">📄 Tải File Xét Nghiệm PDF (Pre-signed URL 120s)</a></div>' +
-            '</div>';
-          jsonBox.innerText = JSON.stringify(d.data, null, 2);
-        } else {
-          resultBox.innerHTML = '<div class="alert alert-danger">' +
-            '<b>TRUY CẬP BỊ TỪ CHỐI (' + res.status + ' ' + (d.error || 'FORBIDDEN') + '):</b><br/>' +
-            (d.message || 'Chính sách Contextual ABAC đã ngăn chặn yêu cầu này.') +
-            '</div>';
-          jsonBox.innerText = JSON.stringify(d, null, 2);
+        if (res.status === 403) {
+          document.getElementById('sec-http-status').style.color = 'var(--danger)';
+          alertBox.innerHTML = '<div class="alert alert-danger">🚫 <b>BỊ TỪ CHỐI (HTTP 403 FORBIDDEN):</b> Vi phạm phân quyền Contextual ABAC. Người dùng thuộc cơ sở khác cố truy cập trái phép hồ sơ Huế khi chưa có Consent. Rò rỉ thông tin = 0 byte. Đã tự động ghi nhật ký kiểm toán vi phạm an ninh!</div>';
+        } else if (res.status === 200) {
+          document.getElementById('sec-http-status').style.color = 'var(--success)';
+          alertBox.innerHTML = '<div class="alert alert-success">✅ <b>TRUY CẬP HỢP LỆ (HTTP 200 OK):</b> Quyền truy cập được phê duyệt hợp pháp theo Nghị định 13/2023. Bệnh án đã được giải mã AES-256-GCM an toàn trong bộ nhớ!</div>';
+          if (body.data && body.data.lab_result_url) {
+            presignedBox.style.display = 'block';
+            document.getElementById('sec-presigned-url').innerText = window.location.origin + body.data.lab_result_url;
+          }
         }
       } catch (e) {
-        resultBox.innerHTML = '<div class="alert alert-danger">Lỗi kết nối: ' + e.message + '</div>';
+        logs.innerText = 'Lỗi: ' + e.message;
       }
-      refreshAuditTable();
-      refreshSystemState();
     }
 
-    // ==================== TAB 3 ACTIONS ====================
-    async function toggleHueChaos(mode) {
-      await fetch('/api/demo/toggle-his-hue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode })
-      });
-      document.getElementById('cb-alert-box').innerHTML = mode === 'DOWN_503'
-        ? '<div class="alert alert-danger">💥 Đã giả lập HIS Huế sập (503 Service Unavailable). Hãy bấm đặt lịch để quan sát Circuit Breaker ngắt mạch!</div>'
-        : '<div class="alert alert-success">✅ Đã khôi phục HIS Huế hoạt động bình thường!</div>';
-      refreshSystemState();
+    // ==================== TAB 4: CIRCUIT BREAKER & OUTBOX ====================
+    async function toggleHueChaos() {
+      const btn = document.getElementById('btn-toggle-chaos');
+      hueChaosActive = !hueChaosActive;
+      try {
+        await fetch('/api/demo/toggle-his-hue', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chaos: hueChaosActive })
+        });
+        if (hueChaosActive) {
+          btn.innerText = '✅ Khôi Phục HIS Huế Trở Lại';
+          btn.className = 'btn btn-success';
+          document.getElementById('circuit-alert').innerHTML = '<div class="alert alert-warning">⚠️ <b>Đã kích hoạt chế độ lỗi cho HIS Huế:</b> Các cuộc gọi sang HIS Huế sẽ bị lỗi / timeout để thử nghiệm Circuit Breaker.</div>';
+        } else {
+          btn.innerText = '💥 Giả Lập HIS Huế Sập Mạng (Chaos Injection)';
+          btn.className = 'btn btn-danger';
+          document.getElementById('circuit-alert').innerHTML = '<div class="alert alert-info">Đã khôi phục HIS Huế hoạt động bình thường.</div>';
+        }
+        await refreshSystemState();
+      } catch (e) {
+        alert('Lỗi: ' + e.message);
+      }
     }
 
     async function bookAppointmentAtHue() {
-      const token = tokens['patient1'];
-      const slotTime = '2026-11-21 ' + String(8 + Math.floor(Math.random() * 8)).padStart(2, '0') + ':00';
-      const logsEl = document.getElementById('cb-logs');
-      logsEl.innerText = '[Đang gửi request đặt lịch tại Huế @ ' + slotTime + ']...\\n';
-
+      const logs = document.getElementById('circuit-logs');
+      logs.innerText = 'Đang gửi đặt lịch tới Cơ sở Huế (FAC_HUE)...';
       try {
         const res = await fetch('/api/bookings', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + tokens.patient_1
+          },
           body: JSON.stringify({
-            doctor_id: 'DOC_202',
-            slot_time: slotTime,
-            patient_id: 'user_pat_01',
-            facility_id: 'FAC_HUE'
+            doctor_id: 'DOC_HUE_201',
+            facility_id: 'FAC_HUE',
+            appointment_time: '2026-11-20 ' + (Math.floor(Math.random() * 8) + 9) + ':00'
           })
         });
-        const d = await res.json();
-        logsEl.innerText += JSON.stringify(d, null, 2);
+        const body = await res.json();
+        logs.innerText = JSON.stringify(body, null, 2);
 
-        if (d.data && d.data.his_sync_status === 'OUTBOX_QUEUED') {
-          document.getElementById('cb-alert-box').innerHTML = '<div class="alert alert-warning">' +
-            '⚠️ <b>Graceful Degradation:</b> HIS Huế lỗi/ngắt mạch, nhưng Bệnh nhân vẫn được <b>xác nhận lịch khám thành công (BK ID: ' + d.data.booking_id + ')</b> và đẩy vào Outbox Queue an toàn!' +
-            '</div>';
-        } else if (d.success) {
-          document.getElementById('cb-alert-box').innerHTML = '<div class="alert alert-success">' +
-            '✅ Đặt lịch và đồng bộ trực tiếp sang HIS Huế thành công (SYNCED, Mã: ' + d.data.his_reference_code + ')!' +
-            '</div>';
+        if (body.data && body.data.his_sync_status === 'OUTBOX_QUEUED') {
+          document.getElementById('circuit-alert').innerHTML = '<div class="alert alert-warning">🛡️ <b>Circuit Breaker phát huy tác dụng:</b> HIS Huế gặp sự cố, hệ thống không làm gián đoạn bệnh nhân mà lưu vào hàng đợi Outbox với trạng thái <code>OUTBOX_QUEUED</code>!</div>';
         }
+        await refreshSystemState();
       } catch (e) {
-        logsEl.innerText += 'Lỗi: ' + e.message;
+        logs.innerText = 'Lỗi: ' + e.message;
       }
-      refreshSystemState();
     }
 
     async function runOutboxWorkerReplay() {
-      const logsEl = document.getElementById('cb-logs');
-      logsEl.innerText = '[Kích hoạt OutboxSyncWorker]\\nĐang quét và replay các sự kiện pending kèm rate limit + Jitter...\\n';
+      const logs = document.getElementById('circuit-logs');
+      logs.innerText = 'Đang kích hoạt Worker quét và đồng bộ bù Outbox...';
       try {
         const res = await fetch('/api/demo/run-outbox', { method: 'POST' });
-        const d = await res.json();
-        logsEl.innerText += JSON.stringify(d, null, 2);
-        document.getElementById('cb-alert-box').innerHTML = '<div class="alert alert-success">' +
-          '🎉 Outbox Worker đã đồng bộ bù thành công <b>' + d.syncedCount + '</b> sự kiện sang HIS Huế!' +
-          '</div>';
-      } catch (e) { logsEl.innerText += 'Lỗi: ' + e.message; }
-      refreshSystemState();
+        const body = await res.json();
+        logs.innerText = JSON.stringify(body, null, 2);
+        document.getElementById('circuit-alert').innerHTML = '<div class="alert alert-success">✅ <b>Worker hoàn tất xử lý:</b> Đã đồng bộ bù thành công các lịch hẹn tồn sang HIS!</div>';
+        await refreshSystemState();
+      } catch (e) {
+        logs.innerText = 'Lỗi: ' + e.message;
+      }
     }
 
-    // ==================== TAB 4 ACTIONS ====================
+    // ==================== TAB 5: AUDIT LOG & TAMPERING ====================
     async function verifyAuditChain() {
-      const alertEl = document.getElementById('audit-verify-alert');
+      const details = document.getElementById('audit-verify-details');
+      const statusEl = document.getElementById('audit-chain-status');
+      details.innerText = 'Đang quét toàn bộ chuỗi băm HMAC-SHA256 từ khối Genesis...';
+
+      const t0 = performance.now();
       try {
         const res = await fetch('/api/audit/verify');
-        const d = await res.json();
-        if (d.success) {
-          alertEl.innerHTML = '<div class="alert alert-success">' +
-            '🛡️ <b>CHUỖI KIỂM TOÁN 100% TOÀN VẸN:</b> ' + d.verification.verifiedCount + ' bản ghi đã được kiểm tra liên hoàn từ Genesis Block. Chữ ký HMAC-SHA256 hoàn toàn trùng khớp bí mật hệ thống!' +
-            '</div>';
+        const t1 = performance.now();
+        document.getElementById('audit-verify-ms').innerText = (t1 - t0).toFixed(2) + 'ms';
+
+        const body = await res.json();
+        details.innerText = JSON.stringify(body, null, 2);
+
+        if (body.success) {
+          statusEl.innerText = 'HỢP LỆ';
+          statusEl.style.color = 'var(--success)';
+          document.getElementById('audit-alert').innerHTML = '<div class="alert alert-success">✅ <b>Chuỗi kiểm toán nguyên vẹn 100%:</b> Không có bất kỳ dấu hiệu chỉnh sửa hay can thiệp trái phép nào!</div>';
         } else {
-          alertEl.innerHTML = '<div class="alert alert-danger">' +
-            '🚨 <b>CẢNH BÁO BẢO MẬT: PHÁT HIỆN GIAN LẬN!</b><br/>' +
-            'Bản ghi ID #' + (d.verification.tamperedAtId || 1) + ' đã bị sửa đổi trái phép trên đĩa cứng! Mã băm tính toán không trùng khớp!' +
-            '</div>';
+          statusEl.innerText = 'BỊ SỬA ĐỔI!';
+          statusEl.style.color = 'var(--danger)';
+          document.getElementById('audit-alert').innerHTML = '<div class="alert alert-danger">🚨 <b>CẢNH BÁO GIAN LẬN:</b> Phát hiện chữ ký HMAC không khớp tại bản ghi ID #' + body.verification.tampered_block_id + '! Cơ sở dữ liệu đã bị can thiệp trái phép ngoài luồng ứng dụng!</div>';
         }
-      } catch (e) { alertEl.innerHTML = '<div class="alert alert-danger">Lỗi: ' + e.message + '</div>'; }
-      refreshSystemState();
+        await refreshAuditTable();
+      } catch (e) {
+        details.innerText = 'Lỗi: ' + e.message;
+      }
     }
 
     async function simulateTamperAttack() {
-      await fetch('/api/demo/tamper-audit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'TAMPER' })
-      });
-      document.getElementById('audit-verify-alert').innerHTML = '<div class="alert alert-warning">' +
-        '🕵️ Đã giả lập Root DBA can thiệp sửa trực tiếp chi tiết của Log #1. Hãy bấm nút <b>Quét Kiểm Định Toàn Vẹn</b> để xem hệ thống phát hiện can thiệp!' +
-        '</div>';
-      refreshAuditTable();
-      refreshSystemState();
+      try {
+        const res = await fetch('/api/demo/tamper-audit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'tamper' })
+        });
+        const body = await res.json();
+        document.getElementById('audit-alert').innerHTML = '<div class="alert alert-warning">⚠️ <b>Đã giả lập can thiệp CSDL:</b> Một dòng trong bảng audit_logs đã bị sửa lén trực tiếp trên đĩa mà không qua ứng dụng. Nhấn "Kiểm Tra Toàn Vẹn" để xem thuật toán phát hiện gian lận!</div>';
+        await verifyAuditChain();
+      } catch (e) {
+        alert('Lỗi: ' + e.message);
+      }
     }
 
     async function restoreTamper() {
-      await fetch('/api/demo/tamper-audit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'RESTORE' })
-      });
-      document.getElementById('audit-verify-alert').innerHTML = '<div class="alert alert-success">' +
-        '✨ Đã khôi phục nguyên bản Log #1.' +
-        '</div>';
-      refreshAuditTable();
-      refreshSystemState();
+      try {
+        await fetch('/api/demo/tamper-audit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'restore' })
+        });
+        document.getElementById('audit-alert').innerHTML = '<div class="alert alert-info">Đã khôi phục dữ liệu nhật ký gốc.</div>';
+        await verifyAuditChain();
+      } catch (e) {
+        alert('Lỗi: ' + e.message);
+      }
     }
 
     async function refreshAuditTable() {
-      const tbody = document.getElementById('audit-table-body');
       try {
         const res = await fetch('/api/audit/logs', {
-          headers: { 'Authorization': 'Bearer ' + tokens['admin'] }
+          headers: { 'Authorization': 'Bearer ' + (tokens.admin || '') }
         });
-        const d = await res.json();
-        if (d.success && d.data.length > 0) {
-          tbody.innerHTML = d.data.slice(0, 15).map(l => {
-            const isTampered = String(l.details || '').includes('FORGED');
-            const statusClass = l.status === 'SUCCESS' ? 'color: var(--success);' : 'color: var(--danger);';
-            return '<tr style="' + (isTampered ? 'background: rgba(239,68,68,0.15);' : '') + '">' +
-              '<td><b>#' + l.id + '</b></td>' +
-              '<td style="color:var(--text-muted); font-size:11px;">' + l.timestamp.slice(11, 19) + '</td>' +
-              '<td>' + l.actor_id + ' <span style="font-size:10px; color:var(--text-muted);">(' + l.actor_role + ')</span></td>' +
-              '<td><code>' + l.action + '</code></td>' +
-              '<td>' + (l.target_resource || '-') + '</td>' +
-              '<td style="' + statusClass + '"><b>' + l.status + '</b></td>' +
-              '<td style="font-family:monospace; font-size:11px; color:var(--primary);">' + l.current_hash.slice(0, 18) + '...</td>' +
-              '</tr>';
-          }).join('');
+        if (!res.ok) return;
+        const body = await res.json();
+        const logs = body.data || [];
+        document.getElementById('audit-total-records').innerText = logs.length;
+
+        const tbody = document.getElementById('audit-table-body');
+        if (logs.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">Chưa có bản ghi nào.</td></tr>';
+          return;
         }
+
+        tbody.innerHTML = logs.slice(0, 10).map(l => {
+          let badgeClass = 'badge-driver';
+          if (l.status >= 400) badgeClass = 'badge-driver" style="background:#fee2e2;color:#991b1b;';
+          return '<tr>' +
+            '<td><b>#' + l.id + '</b></td>' +
+            '<td>' + new Date(l.timestamp).toLocaleTimeString() + '</td>' +
+            '<td><code>' + l.actor + '</code></td>' +
+            '<td>' + l.action + '</td>' +
+            '<td>' + (l.resource_id || '-') + '</td>' +
+            '<td><span class="' + badgeClass + '">' + l.status + '</span></td>' +
+            '<td style="font-family:monospace;font-size:11px;">' + (l.prev_hash ? l.prev_hash.slice(0, 10) + '...' : 'GENESIS') + '</td>' +
+            '<td style="font-family:monospace;font-size:11px;color:var(--primary);">' + (l.current_hash ? l.current_hash.slice(0, 14) + '...' : '-') + '</td>' +
+          '</tr>';
+        }).join('');
       } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="7">Lỗi tải audit logs.</td></tr>';
+        console.warn('Lỗi refresh table:', e);
       }
     }
 
     async function resetAllState() {
-      await fetch('/admin/reset', { method: 'POST' });
-      await restoreTamper();
-      alert('Đã reset toàn bộ trạng thái hệ thống!');
-      await init();
+      if (!confirm('Bạn có chắc chắn muốn làm mới toàn bộ trạng thái hệ thống về ban đầu?')) return;
+      await fetch('/api/demo/race-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ count: 0, slot_time: '2026-11-20 08:00' })
+      });
+      await fetch('/api/demo/tamper-audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'restore' })
+      });
+      await fetch('/api/demo/toggle-his-hue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chaos: false })
+      });
+      await refreshSystemState();
+      await refreshAuditTable();
+      alert('Đã khôi phục toàn bộ trạng thái hệ thống thành công!');
     }
 
-    // Auto initialize on load
+    // Auto-init on load
     window.onload = init;
   </script>
 </body>

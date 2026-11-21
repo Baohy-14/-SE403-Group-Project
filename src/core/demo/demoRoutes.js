@@ -10,6 +10,7 @@ const lockManager = require('../booking/lockManager');
 const bookingService = require('../booking/bookingService');
 const mockManager = require('../../mock-his/mockServersManager');
 const backgroundWorker = require('../../worker/backgroundWorker');
+const jwtService = require('../auth/jwtService');
 
 let originalLog1Details = null;
 
@@ -23,11 +24,24 @@ function registerDemoRoutes(app) {
     res.send(renderDashboardHtml(), 'text/html; charset=utf-8');
   });
 
-  // 2. Real-time Aggregated System State
+  // 2. Demo JWT Tokens for role switching
+  app.get('/api/demo/tokens', (req, res) => {
+    const tokens = {
+      patient_1: jwtService.sign({ sub: 'user_pat_01', name: 'Nguyễn Văn An', role: 'PATIENT', facility_id: 'FAC_DANANG' }),
+      patient_2: jwtService.sign({ sub: 'user_pat_02', name: 'Trần Thị Bình', role: 'PATIENT', facility_id: 'FAC_HUE' }),
+      receptionist_danang: jwtService.sign({ sub: 'staff_dn_01', name: 'Lê Thu Ngân', role: 'RECEPTIONIST', facility_id: 'FAC_DANANG' }),
+      doctor_danang: jwtService.sign({ sub: 'doc_dn_01', name: 'BS. Lê Viết Dũng', role: 'DOCTOR', facility_id: 'FAC_DANANG' }),
+      admin: jwtService.sign({ sub: 'admin_01', name: 'Quản Trị Viên Hệ Thống', role: 'ADMIN', facility_id: 'ALL' })
+    };
+    res.json({ success: true, tokens });
+  });
+
+  // 3. Real-time Aggregated System State
   app.get('/api/demo/state', (req, res) => {
     const circuits = hisDispatcher.getAllCircuitStatuses();
     const auditVerification = auditVerifier.verifyChainIntegrity();
     const pendingOutbox = db.getPendingOutboxEvents(100);
+    const dashboardStats = db.getDashboardStats();
 
     // Check if patient2 granted consent to FAC_DANANG
     const consentRow = db.sqlite.prepare(
@@ -41,12 +55,13 @@ function registerDemoRoutes(app) {
         circuits,
         audit_verification: auditVerification,
         pending_outbox_count: pendingOutbox.length,
-        patient2_consent_danang: consentRow ? Boolean(consentRow.is_active) : false
+        patient2_consent_danang: consentRow ? Boolean(consentRow.is_active) : false,
+        dashboard_stats: dashboardStats
       }
     });
   });
 
-  // 3. Concurrency Race Test (1 vs 1 or 20 concurrent requests)
+  // 4. Concurrency Race Test (1 vs 1 or 20 concurrent requests)
   app.post('/api/demo/race-test', async (req, res) => {
     const { count = 2, slot_time = '2026-11-20 08:00', doctor_id = 'DOC_101', facility_id = 'FAC_DANANG' } = req.body;
     const numRequests = Math.min(Math.max(Number(count) || 2, 2), 50);
@@ -110,23 +125,26 @@ function registerDemoRoutes(app) {
 
     res.json({
       success: true,
-      total: results.length,
-      successCount: successList.length,
-      conflictCount: conflictList.length,
-      doubleBookingRate: Number(doubleBookingRate.toFixed(2)),
-      totalDurationMs,
+      stats: {
+        total: results.length,
+        success: successList.length,
+        conflicts: conflictList.length,
+        duration_ms: totalDurationMs,
+        double_booking_rate: Number(doubleBookingRate.toFixed(2))
+      },
       details: results
     });
   });
 
-  // 4. Toggle Mock HIS Huế Chaos Mode
+  // 5. Toggle Mock HIS Huế Chaos Mode
   app.post('/api/demo/toggle-his-hue', (req, res) => {
-    const { mode = 'UP' } = req.body;
-    mockManager.setHueChaosMode(mode);
-    res.json({ success: true, mode });
+    const { mode, chaos } = req.body;
+    const finalMode = chaos === true || mode === 'DOWN' ? 'DOWN' : 'UP';
+    mockManager.setHueChaosMode(finalMode);
+    res.json({ success: true, mode: finalMode });
   });
 
-  // 5. Trigger Outbox Replay Worker Batch
+  // 6. Trigger Outbox Replay Worker Batch
   app.post('/api/demo/run-outbox', async (req, res) => {
     try {
       const syncedCount = await backgroundWorker.processOutboxBatch(10);
@@ -136,9 +154,9 @@ function registerDemoRoutes(app) {
     }
   });
 
-  // 6. Simulate / Restore Root DBA Tamper on Audit Log #1
+  // 7. Simulate / Restore Root DBA Tamper on Audit Log #1
   app.post('/api/demo/tamper-audit', (req, res) => {
-    const { action = 'TAMPER' } = req.body;
+    const action = (req.body && req.body.action) ? req.body.action.toUpperCase() : 'TAMPER';
     const row1 = db.sqlite.prepare('SELECT id, details FROM audit_logs WHERE id = 1').get();
 
     if (!row1) {

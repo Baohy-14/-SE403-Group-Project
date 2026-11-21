@@ -26,13 +26,19 @@ function registerDemoRoutes(app) {
 
   // 2. Demo JWT Tokens for role switching
   app.get('/api/demo/tokens', (req, res) => {
+    const userPat1 = db.getUserById('user_pat_01');
+    const userPat2 = db.getUserById('user_pat_02');
+    const userRecDn = db.getUserById('user_rec_dn');
+    const userDocDn = db.getUserById('user_doc_dn');
+    const userAdmin = db.getUserById('user_admin');
+
     const tokens = {
-      patient_1: jwtService.sign({ sub: 'user_pat_01', name: 'Nguyễn Văn An', role: 'PATIENT', facility_id: 'FAC_DANANG' }),
-      patient_2: jwtService.sign({ sub: 'user_pat_02', name: 'Trần Thị Bình', role: 'PATIENT', facility_id: 'FAC_HUE' }),
-      patient2: jwtService.sign({ sub: 'user_pat_02', name: 'Trần Thị Bình', role: 'PATIENT', facility_id: 'FAC_HUE' }),
-      receptionist_danang: jwtService.sign({ sub: 'staff_dn_01', name: 'Lê Thu Ngân', role: 'RECEPTIONIST', facility_id: 'FAC_DANANG' }),
-      doctor_danang: jwtService.sign({ sub: 'doc_dn_01', name: 'BS. Lê Viết Dũng', role: 'DOCTOR', facility_id: 'FAC_DANANG' }),
-      admin: jwtService.sign({ sub: 'admin_01', name: 'Quản Trị Viên Hệ Thống', role: 'ADMIN', facility_id: 'ALL' })
+      patient_1: userPat1 ? jwtService.issueTokenForUser(userPat1) : jwtService.sign({ sub: 'user_pat_01', role: 'PATIENT' }),
+      patient_2: userPat2 ? jwtService.issueTokenForUser(userPat2) : jwtService.sign({ sub: 'user_pat_02', role: 'PATIENT', facility_id: 'FAC_HUE' }),
+      patient2: userPat2 ? jwtService.issueTokenForUser(userPat2) : jwtService.sign({ sub: 'user_pat_02', role: 'PATIENT', facility_id: 'FAC_HUE' }),
+      receptionist_danang: userRecDn ? jwtService.issueTokenForUser(userRecDn) : jwtService.sign({ sub: 'user_rec_dn', role: 'RECEPTIONIST', facility_id: 'FAC_DANANG' }),
+      doctor_danang: userDocDn ? jwtService.issueTokenForUser(userDocDn) : jwtService.sign({ sub: 'user_doc_dn', role: 'DOCTOR', facility_id: 'FAC_DANANG' }),
+      admin: userAdmin ? jwtService.issueTokenForUser(userAdmin) : jwtService.sign({ sub: 'user_admin', role: 'ADMIN' })
     };
     res.json({ success: true, tokens });
   });
@@ -91,15 +97,26 @@ function registerDemoRoutes(app) {
               facilityId: facility_id,
               idempotencyKey: idemKey
             });
-            return {
-              clientIndex: i,
-              patient: patientName,
-              status: 201,
-              message: 'Giữ chỗ thành công',
-              bookingId: result.bookingId,
-              fencingToken: result.fencingToken,
-              durationMs: Date.now() - reqStart
-            };
+            if (result.statusCode === 201) {
+              return {
+                clientIndex: i,
+                patient: patientName,
+                status: 201,
+                message: 'Giữ chỗ thành công',
+                bookingId: result.data?.booking?.id,
+                fencingToken: result.data?.booking?.fencing_token,
+                durationMs: Date.now() - reqStart
+              };
+            } else {
+              return {
+                clientIndex: i,
+                patient: patientName,
+                status: result.statusCode || 409,
+                error: result.data?.error || 'SLOT_LOCKED_CONCURRENT_CONFLICT',
+                message: result.data?.message || 'Khung giờ khám đã có người giữ chỗ',
+                durationMs: Date.now() - reqStart
+              };
+            }
           } catch (err) {
             return {
               clientIndex: i,
@@ -170,12 +187,49 @@ function registerDemoRoutes(app) {
     });
   });
 
-  // 6. Toggle Mock HIS Huế Chaos Mode
+  // 6. Toggle Mock HIS Huế Chaos Mode & Circuit Breaker
   app.post('/api/demo/toggle-his-hue', (req, res) => {
     const { mode, chaos } = req.body;
-    const finalMode = chaos === true || mode === 'DOWN' ? 'DOWN' : 'UP';
+    const isDown = chaos === true || mode === 'DOWN' || mode === 'DOWN_503';
+    const finalMode = isDown ? 'DOWN_503' : 'UP';
     mockManager.setHueChaosMode(finalMode);
-    res.json({ success: true, mode: finalMode });
+
+    const hueCb = hisDispatcher.circuitBreakers.get('FAC_HUE');
+    if (isDown) {
+      if (hueCb) {
+        hueCb.state = 'OPEN';
+        hueCb.openedAt = Date.now();
+        hueCb.failureCount = 3;
+      }
+    } else {
+      if (hueCb) {
+        hueCb.reset();
+      }
+    }
+
+    res.json({ success: true, mode: finalMode, circuit_state: hueCb ? hueCb.state : 'UNKNOWN' });
+  });
+
+  // 6.1 Book Appointment specifically at Huế to demonstrate Circuit Breaker & Outbox
+  app.post('/api/demo/book-hue', async (req, res) => {
+    try {
+      const now = new Date();
+      const slotTime = `2026-11-20 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      db.resetSlot('DOC_202', slotTime, 'FAC_HUE');
+
+      const result = await bookingService.createBooking({
+        doctorId: 'DOC_202',
+        slotTime,
+        patientId: 'user_pat_02',
+        patientName: 'Trần Thị Bình',
+        facilityId: 'FAC_HUE',
+        idempotencyKey: `idem_hue_${Date.now()}`
+      });
+
+      res.status(result.statusCode).json(result.data);
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
   });
 
   // 7. Trigger Outbox Replay Worker Batch

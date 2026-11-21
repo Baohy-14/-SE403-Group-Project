@@ -1,8 +1,7 @@
 /**
  * MediLink Interactive Architecture Verification Dashboard View
- * Thiết kế giao diện trực quan, rõ ràng, màu sắc tự nhiên chuẩn Y tế (Clean Medical UI)
- * Dành cho buổi Báo cáo & Vấn đáp đồ án SE 403 (TS. Nguyễn Đức Mận)
- * Nhóm Đề tài 1: Nguyễn Đức Bảo Hy, Lê Viết Nghĩa, Trần Tiến Danh, Nguyễn Quang Trường
+ * Giao diện trực quan, rõ ràng, màu sắc tự nhiên chuẩn Y tế (Clean Medical UI)
+ * Tập trung điều hành và kiểm thử các tính năng cốt lõi của nền tảng MediLink
  */
 
 function renderDashboardHtml() {
@@ -462,9 +461,9 @@ function renderDashboardHtml() {
     <div class="brand-area">
       <div class="brand-icon">M</div>
       <div class="brand-title">
-        <h1>MediLink Platform - Bảng Điều Khiển & Kiểm Định Kiến Trúc</h1>
+        <h1>MediLink Platform - Bảng Điều Khiển & Giám Sát Vận Hành</h1>
         <div class="subtitle">
-          SE 403 (TS. Nguyễn Đức Mận) · Đề tài 1: Nền tảng Đặt lịch & Quản lý EHR Liên chuỗi 12 Phòng khám (v2)
+          Hệ Thống Đặt Lịch Khám & Liên Thông Hồ Sơ Sức Khỏe Điện Tử (EHR) Chuỗi 12 Phòng Khám
         </div>
       </div>
     </div>
@@ -491,19 +490,19 @@ function renderDashboardHtml() {
   <!-- NAVIGATION TABS -->
   <div class="nav-tabs">
     <button class="nav-tab-btn active" onclick="switchTab('tab-overview')">
-      📊 1. Tổng Quan Chuỗi 12 Phòng Khám
+      📊 1. Tổng Quan Vận Hành Chuỗi
     </button>
     <button class="nav-tab-btn" onclick="switchTab('tab-concurrency')">
-      ⚡ 2. [ASR-01] Đặt Lịch & Chống Trùng (Concurrency)
+      ⚡ 2. Đặt Lịch Khám & Chống Double-Booking
     </button>
     <button class="nav-tab-btn" onclick="switchTab('tab-security')">
-      🛡️ 3. [ASR-03] Bảo Mật ABAC & Nghị Định 13/2023
+      🛡️ 3. Bảo Mật Hồ Sơ Bệnh Án & Phân Quyền ABAC
     </button>
     <button class="nav-tab-btn" onclick="switchTab('tab-circuit')">
-      🔌 4. [ASR-02] Cách Ly Lỗi HIS & Outbox Recovery
+      🔌 4. Tích Hợp Đa HIS & Ngắt Mạch Circuit Breaker
     </button>
     <button class="nav-tab-btn" onclick="switchTab('tab-audit')">
-      📜 5. [ASR-05] Sổ Cái Audit HMAC Bất Biến
+      📜 5. Sổ Cái Kiểm Toán Toàn Vẹn (HMAC-SHA256)
     </button>
   </div>
 
@@ -586,34 +585,34 @@ function renderDashboardHtml() {
       </div>
     </div>
 
-    <!-- Team Members & Architectural Alignment -->
+    <!-- Core Subsystems Status & Architecture Stack -->
     <div class="card">
       <div class="card-header">
         <div class="card-title">
-          <span>👥 Phân Công Trách Nhiệm Nhóm Sinh Viên Thực Hiện</span>
+          <span>🌐 Trạng Thái Vận Hành Các Phân Hệ Lõi (Core Subsystems Status)</span>
         </div>
-        <span class="badge-driver">Nhóm 4 Thành Viên</span>
+        <span class="badge-driver" style="background: #e0f2fe; color: #0284c7;">Hệ Thống Sẵn Sàng</span>
       </div>
       <div class="grid-4" style="margin-bottom: 0;">
         <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border: 1px solid #e2e8f0;">
-          <div style="font-weight: 700; color: #0f172a;">Nguyễn Đức Bảo Hy</div>
-          <div style="font-size: 12px; color: var(--primary); font-weight: 600; margin-top: 2px;">Lead Architect</div>
-          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Chủ trì kiến trúc tổng thể, ADRs, điều phối C4 Model & ATAM v2.</div>
+          <div style="font-weight: 700; color: #0f172a;">⚡ Đặt Lịch & Chống Trùng</div>
+          <div style="font-size: 12px; color: var(--primary); font-weight: 600; margin-top: 2px;">Concurrency Controller</div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Redis Distributed Lock kèm Fencing Token + SQLite Transaction Unique chống trùng lịch 100%.</div>
         </div>
         <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border: 1px solid #e2e8f0;">
-          <div style="font-weight: 700; color: #0f172a;">Lê Viết Nghĩa</div>
-          <div style="font-size: 12px; color: var(--primary); font-weight: 600; margin-top: 2px;">Req & Doc Owner</div>
-          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Xây dựng 6 QA Scenarios, Utility Tree, hoàn thiện hồ sơ SAD và tài liệu Word.</div>
+          <div style="font-weight: 700; color: #0f172a;">🛡️ Bảo Mật & Quyền Riêng Tư</div>
+          <div style="font-size: 12px; color: var(--primary); font-weight: 600; margin-top: 2px;">ABAC & Consent Guard</div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Contextual ABAC, kiểm soát Consent bệnh nhân, che mờ dữ liệu (Masking) & AES-256-GCM.</div>
         </div>
         <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border: 1px solid #e2e8f0;">
-          <div style="font-weight: 700; color: #0f172a;">Trần Tiến Danh</div>
-          <div style="font-size: 12px; color: var(--primary); font-weight: 600; margin-top: 2px;">Prototype Lead</div>
-          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Hiện thực lõi Core Modular Monolith, Lock Fencing, ACL FHIR và SQLite WAL.</div>
+          <div style="font-weight: 700; color: #0f172a;">🔌 Tích Hợp Đa Cơ Sở</div>
+          <div style="font-size: 12px; color: var(--primary); font-weight: 600; margin-top: 2px;">Multi-HIS & Circuit Breaker</div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Anti-Corruption Layer chuẩn hóa FHIR R4, ngắt mạch tự động khi HIS lỗi & Outbox Eventual Consistency.</div>
         </div>
         <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border: 1px solid #e2e8f0;">
-          <div style="font-weight: 700; color: #0f172a;">Nguyễn Quang Trường</div>
-          <div style="font-size: 12px; color: var(--primary); font-weight: 600; margin-top: 2px;">QA & Test Lead</div>
-          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Thiết kế bộ kiểm thử 6 kịch bản QA, đo đạc p95 thực nghiệm và rà soát AI Log.</div>
+          <div style="font-weight: 700; color: #0f172a;">📜 Sổ Cái Kiểm Toán</div>
+          <div style="font-size: 12px; color: var(--primary); font-weight: 600; margin-top: 2px;">HMAC-SHA256 Audit Vault</div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Lưu vết append-only, liên kết chuỗi băm HMAC-SHA256 bất biến, tự động phát hiện xâm nhập trái phép.</div>
         </div>
       </div>
     </div>
@@ -711,9 +710,9 @@ function renderDashboardHtml() {
         <div class="form-group">
           <label class="form-label">Chọn danh tính tài khoản đang thực hiện thao tác</label>
           <select class="form-control" id="sec-user-select" onchange="updateSecRoleDescription()">
-            <option value="staff_dn">Lễ tân Đà Nẵng (staff_dn_01 - Thuộc cơ sở FAC_DANANG)</option>
-            <option value="doc_dn">Bác sĩ Đà Nẵng (doc_dn_01 - Bác sĩ cơ sở FAC_DANANG)</option>
-            <option value="pat_02">Bệnh nhân Trần Thị B (user_pat_02 - Chủ sở hữu hồ sơ)</option>
+            <option value="staff_dn">Lễ tân Đà Nẵng (user_rec_dn - Thuộc cơ sở FAC_DANANG)</option>
+            <option value="doc_dn">Bác sĩ Đà Nẵng (user_doc_dn - Bác sĩ cơ sở FAC_DANANG)</option>
+            <option value="pat_02">Bệnh nhân Trần Thị Bình (user_pat_02 - Chủ sở hữu hồ sơ)</option>
           </select>
         </div>
 
@@ -1077,7 +1076,9 @@ function renderDashboardHtml() {
         logs.innerText = JSON.stringify(body, null, 2);
 
         if (body.stats.success === 1 && body.stats.conflicts === 1) {
-          alert.innerHTML = '<div class="alert alert-success">✅ <b>Kiểm định thành công tuyệt đối:</b> 1 Bệnh nhân đặt thành công (201 Created), 1 Bệnh nhân nhận lỗi (409 Conflict). Không có Double-Booking!</div>';
+          alert.innerHTML = '<div class="alert alert-success">✅ <b>Kiểm định thành công tuyệt đối:</b> 1 Bệnh nhân đặt thành công (201 Created), 1 Bệnh nhân nhận lỗi (409 Conflict - Fast-fail). Tỷ lệ trùng lịch: <b>0.00%</b>!</div>';
+        } else {
+          alert.innerHTML = '<div class="alert alert-warning">⚠️ <b>Kết quả:</b> ' + body.stats.success + ' thành công, ' + body.stats.conflicts + ' xung đột.</div>';
         }
       } catch (e) {
         logs.innerText = 'Lỗi gửi request: ' + e.message;
@@ -1100,7 +1101,11 @@ function renderDashboardHtml() {
         updateRaceStats(body.stats);
         logs.innerText = JSON.stringify(body, null, 2);
 
-        alert.innerHTML = '<div class="alert alert-success">🔥 <b>Hoàn tất tải cao:</b> ' + body.stats.success + ' slot được xác nhận trong CSDL, ' + body.stats.conflicts + ' requests bị từ chối 409 trong ' + body.stats.duration_ms + 'ms. Tỷ lệ trùng lịch: <b>0.00%</b>!</div>';
+        if (body.stats.success === 1) {
+          alert.innerHTML = '<div class="alert alert-success">🔥 <b>Kiểm định bão tải thành công tuyệt đối:</b> Đúng 1 yêu cầu được xác nhận (201 Created), ' + body.stats.conflicts + ' requests bị từ chối 409 (Fast-fail) trong ' + body.stats.duration_ms + 'ms. Tỷ lệ trùng lịch: <b>0.00%</b>!</div>';
+        } else {
+          alert.innerHTML = '<div class="alert alert-danger">⚠️ <b>Phát hiện bất thường:</b> ' + body.stats.success + ' requests ghi thành công!</div>';
+        }
       } catch (e) {
         logs.innerText = 'Lỗi: ' + e.message;
       }
@@ -1111,7 +1116,10 @@ function renderDashboardHtml() {
       document.getElementById('stat-race-total').innerText = stats.total;
       document.getElementById('stat-race-success').innerText = stats.success;
       document.getElementById('stat-race-conflict').innerText = stats.conflicts;
-      document.getElementById('stat-race-rate').innerText = '0.00%';
+      const rateVal = stats.double_booking_rate || 0;
+      const rateEl = document.getElementById('stat-race-rate');
+      rateEl.innerText = rateVal.toFixed(2) + '%';
+      rateEl.style.color = rateVal > 0 ? 'var(--danger)' : 'var(--primary)';
     }
 
     async function resetSlotOnly() {
@@ -1176,10 +1184,14 @@ function renderDashboardHtml() {
         } else if (res.status === 200) {
           document.getElementById('sec-http-status').style.color = 'var(--success)';
           alertBox.innerHTML = '<div class="alert alert-success">✅ <b>TRUY CẬP HỢP LỆ (HTTP 200 OK):</b> Quyền truy cập được phê duyệt hợp pháp theo Nghị định 13/2023. Bệnh án đã được giải mã AES-256-GCM an toàn trong bộ nhớ!</div>';
-          if (body.data && body.data.lab_result_url) {
+          const presignedUrl = body.data?.lab_report_presigned_url || body.data?.lab_result_url;
+          if (presignedUrl) {
             presignedBox.style.display = 'block';
-            document.getElementById('sec-presigned-url').innerText = window.location.origin + body.data.lab_result_url;
+            document.getElementById('sec-presigned-url').innerText = window.location.origin + presignedUrl;
           }
+        } else {
+          document.getElementById('sec-http-status').style.color = 'var(--danger)';
+          alertBox.innerHTML = '<div class="alert alert-danger">⚠️ <b>Mã phản hồi ' + res.status + ':</b> ' + (body.message || body.error) + '</div>';
         }
       } catch (e) {
         logs.innerText = 'Lỗi: ' + e.message;
@@ -1215,23 +1227,17 @@ function renderDashboardHtml() {
       const logs = document.getElementById('circuit-logs');
       logs.innerText = 'Đang gửi đặt lịch tới Cơ sở Huế (FAC_HUE)...';
       try {
-        const res = await fetch('/api/bookings', {
+        const res = await fetch('/api/demo/book-hue', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + tokens.patient_1
-          },
-          body: JSON.stringify({
-            doctor_id: 'DOC_HUE_201',
-            facility_id: 'FAC_HUE',
-            appointment_time: '2026-11-20 ' + (Math.floor(Math.random() * 8) + 9) + ':00'
-          })
+          headers: { 'Content-Type': 'application/json' }
         });
         const body = await res.json();
         logs.innerText = JSON.stringify(body, null, 2);
 
-        if (body.data && body.data.his_sync_status === 'OUTBOX_QUEUED') {
-          document.getElementById('circuit-alert').innerHTML = '<div class="alert alert-warning">🛡️ <b>Circuit Breaker phát huy tác dụng:</b> HIS Huế gặp sự cố, hệ thống không làm gián đoạn bệnh nhân mà lưu vào hàng đợi Outbox với trạng thái <code>OUTBOX_QUEUED</code>!</div>';
+        if (body.booking && body.booking.his_sync_status === 'OUTBOX_QUEUED') {
+          document.getElementById('circuit-alert').innerHTML = '<div class="alert alert-warning">🛡️ <b>Circuit Breaker phát huy tác dụng:</b> HIS Huế gặp sự cố (mã [FAC_HUE] sập/ngắt mạch), MediLink Core không làm gián đoạn bệnh nhân mà lưu vào hàng đợi Outbox với trạng thái <code>OUTBOX_QUEUED</code>!</div>';
+        } else if (body.booking && body.booking.his_sync_status === 'SYNCED') {
+          document.getElementById('circuit-alert').innerHTML = '<div class="alert alert-success">✅ <b>Đồng bộ thời gian thực:</b> HIS Huế hoạt động bình thường, lịch hẹn đã được đồng bộ trực tiếp sang SOAP/XML (SYNCED)!</div>';
         }
         await refreshSystemState();
       } catch (e) {
@@ -1246,7 +1252,11 @@ function renderDashboardHtml() {
         const res = await fetch('/api/demo/run-outbox', { method: 'POST' });
         const body = await res.json();
         logs.innerText = JSON.stringify(body, null, 2);
-        document.getElementById('circuit-alert').innerHTML = '<div class="alert alert-success">✅ <b>Worker hoàn tất xử lý:</b> Đã đồng bộ bù thành công các lịch hẹn tồn sang HIS!</div>';
+        if (body.syncedCount > 0) {
+          document.getElementById('circuit-alert').innerHTML = '<div class="alert alert-success">✅ <b>Worker hoàn tất xử lý:</b> Đã đồng bộ bù thành công ' + body.syncedCount + ' lịch hẹn tồn đọng sang HIS Huế (Eventual Consistency)!</div>';
+        } else {
+          document.getElementById('circuit-alert').innerHTML = '<div class="alert alert-info">ℹ️ Hàng đợi Outbox hiện trống (0 sự kiện cần bù).</div>';
+        }
         await refreshSystemState();
       } catch (e) {
         logs.innerText = 'Lỗi: ' + e.message;
@@ -1275,7 +1285,8 @@ function renderDashboardHtml() {
         } else {
           statusEl.innerText = 'BỊ SỬA ĐỔI!';
           statusEl.style.color = 'var(--danger)';
-          document.getElementById('audit-alert').innerHTML = '<div class="alert alert-danger">🚨 <b>CẢNH BÁO GIAN LẬN:</b> Phát hiện chữ ký HMAC không khớp tại bản ghi ID #' + body.verification.tampered_block_id + '! Cơ sở dữ liệu đã bị can thiệp trái phép ngoài luồng ứng dụng!</div>';
+          const tamperedId = body.verification ? (body.verification.tamperedBlockId || body.verification.tampered_block_id || 1) : 1;
+          document.getElementById('audit-alert').innerHTML = '<div class="alert alert-danger">🚨 <b>CẢNH BÁO GIAN LẬN:</b> Phát hiện chữ ký HMAC không khớp tại bản ghi ID #' + tamperedId + '! Cơ sở dữ liệu đã bị can thiệp trái phép ngoài luồng ứng dụng!</div>';
         }
         await refreshAuditTable();
       } catch (e) {

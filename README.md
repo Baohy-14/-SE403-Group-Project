@@ -79,12 +79,12 @@ docker stop mock-his-hue
 ```
 
 ---
-## 3. Hướng dẫn Chạy Dashboard
+## 4. Hướng dẫn Chạy Dashboard
 ```powershell
 cd D:\-SE403-Group-Project\-SE403-Group-Project\src
 node start-all.js
 ```
-## 4. Tóm tắt Kết quả Đo lường Thực tế trên Máy Thực nghiệm của Nhóm
+## 5. Tóm tắt Kết quả Đo lường Thực tế trên Máy Thực nghiệm của Nhóm
 
 - **Môi trường phần cứng thực đo:** `Intel(R) Core(TM) i3-1005G1 CPU @ 1.20GHz (4 vCPU)`, `3.79 GB RAM`, `Windows 11 (win32 10.0.26200 x64)`, `Node.js v22.15.0`.
 

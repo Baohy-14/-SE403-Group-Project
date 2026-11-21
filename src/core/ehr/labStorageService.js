@@ -20,6 +20,7 @@ class LabStorageService {
    * Put encrypted binary object into isolated bucket directory
    */
   putEncryptedObject(fileKey, contentBuffer, mimeType = 'application/pdf') {
+    fs.mkdirSync(this.storageDir, { recursive: true });
     const safeName = fileKey.replace(/[^a-zA-Z0-9._-]/g, '_');
     const fullPath = path.join(this.storageDir, `${safeName}.enc`);
     const metaPath = path.join(this.storageDir, `${safeName}.meta.json`);

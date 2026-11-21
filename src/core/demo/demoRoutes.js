@@ -29,6 +29,7 @@ function registerDemoRoutes(app) {
     const tokens = {
       patient_1: jwtService.sign({ sub: 'user_pat_01', name: 'Nguyễn Văn An', role: 'PATIENT', facility_id: 'FAC_DANANG' }),
       patient_2: jwtService.sign({ sub: 'user_pat_02', name: 'Trần Thị Bình', role: 'PATIENT', facility_id: 'FAC_HUE' }),
+      patient2: jwtService.sign({ sub: 'user_pat_02', name: 'Trần Thị Bình', role: 'PATIENT', facility_id: 'FAC_HUE' }),
       receptionist_danang: jwtService.sign({ sub: 'staff_dn_01', name: 'Lê Thu Ngân', role: 'RECEPTIONIST', facility_id: 'FAC_DANANG' }),
       doctor_danang: jwtService.sign({ sub: 'doc_dn_01', name: 'BS. Lê Viết Dũng', role: 'DOCTOR', facility_id: 'FAC_DANANG' }),
       admin: jwtService.sign({ sub: 'admin_01', name: 'Quản Trị Viên Hệ Thống', role: 'ADMIN', facility_id: 'ALL' })
@@ -136,7 +137,40 @@ function registerDemoRoutes(app) {
     });
   });
 
-  // 5. Toggle Mock HIS Huế Chaos Mode
+  // 5. Toggle Patient2 Consent for FAC_DANANG (Demo shortcut – no JWT required)
+  app.post('/api/demo/toggle-consent', (req, res) => {
+    const { grant } = req.body;
+    const nowIso = new Date().toISOString();
+    const existing = db.sqlite.prepare(
+      'SELECT is_active FROM patient_consents WHERE patient_id = ? AND granted_facility_id = ?'
+    ).get('user_pat_02', 'FAC_DANANG');
+
+    if (existing) {
+      db.sqlite.prepare(
+        'UPDATE patient_consents SET is_active = ?, updated_at = ? WHERE patient_id = ? AND granted_facility_id = ?'
+      ).run(grant ? 1 : 0, nowIso, 'user_pat_02', 'FAC_DANANG');
+    } else {
+      db.sqlite.prepare(
+        'INSERT INTO patient_consents (patient_id, granted_facility_id, scope, is_active, updated_at) VALUES (?, ?, ?, ?, ?)'
+      ).run('user_pat_02', 'FAC_DANANG', 'READ_EHR', grant ? 1 : 0, nowIso);
+    }
+
+    const afterRow = db.sqlite.prepare(
+      'SELECT is_active FROM patient_consents WHERE patient_id = ? AND granted_facility_id = ?'
+    ).get('user_pat_02', 'FAC_DANANG');
+
+    res.json({
+      success: true,
+      patient_id: 'user_pat_02',
+      facility_id: 'FAC_DANANG',
+      is_active: Boolean(afterRow && afterRow.is_active),
+      message: grant
+        ? '✅ Bệnh nhân Trần Thị Bình đã cấp quyền chia sẻ bệnh án cho Cơ sở Đà Nẵng.'
+        : '❌ Đã thu hồi quyền chia sẻ bệnh án khỏi Cơ sở Đà Nẵng.'
+    });
+  });
+
+  // 6. Toggle Mock HIS Huế Chaos Mode
   app.post('/api/demo/toggle-his-hue', (req, res) => {
     const { mode, chaos } = req.body;
     const finalMode = chaos === true || mode === 'DOWN' ? 'DOWN' : 'UP';
@@ -144,7 +178,7 @@ function registerDemoRoutes(app) {
     res.json({ success: true, mode: finalMode });
   });
 
-  // 6. Trigger Outbox Replay Worker Batch
+  // 7. Trigger Outbox Replay Worker Batch
   app.post('/api/demo/run-outbox', async (req, res) => {
     try {
       const syncedCount = await backgroundWorker.processOutboxBatch(10);
@@ -154,7 +188,7 @@ function registerDemoRoutes(app) {
     }
   });
 
-  // 7. Simulate / Restore Root DBA Tamper on Audit Log #1
+  // 8. Simulate / Restore Root DBA Tamper on Audit Log #1
   app.post('/api/demo/tamper-audit', (req, res) => {
     const action = (req.body && req.body.action) ? req.body.action.toUpperCase() : 'TAMPER';
     const row1 = db.sqlite.prepare('SELECT id, details FROM audit_logs WHERE id = 1').get();

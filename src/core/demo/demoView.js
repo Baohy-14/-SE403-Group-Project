@@ -1134,19 +1134,13 @@ function renderDashboardHtml() {
     async function toggleConsent() {
       try {
         const isCurrentlyActive = document.getElementById('sec-consent-status').innerText.includes('ĐÃ');
-        const tokenPat = tokens.patient_2;
-        await fetch('/api/ehr/consents', {
+        const res = await fetch('/api/demo/toggle-consent', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + tokenPat
-          },
-          body: JSON.stringify({
-            facility_id: 'FAC_DANANG',
-            grant: !isCurrentlyActive
-          })
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ grant: !isCurrentlyActive })
         });
         await refreshSystemState();
+        await fetchMedicalRecord();
       } catch (e) {
         alert('Lỗi toggle consent: ' + e.message);
       }

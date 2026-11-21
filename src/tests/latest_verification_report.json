@@ -1,11 +1,11 @@
 {
   "environment": {
-    "executedAt": "2026-11-18T07:11:28.873Z",
+    "executedAt": "2026-11-21T00:41:28.984Z",
     "osPlatform": "win32 10.0.26200 (x64)",
-    "cpuModel": "Intel(R) Core(TM) i3-1005G1 CPU @ 1.20GHz",
-    "logicalCores": 4,
-    "totalRamGb": 3.79,
-    "nodeVersion": "v22.15.0"
+    "cpuModel": "12th Gen Intel(R) Core(TM) i5-12500H",
+    "logicalCores": 16,
+    "totalRamGb": 7.63,
+    "nodeVersion": "v24.11.0"
   },
   "allPassed": true,
   "summary": [
@@ -13,42 +13,42 @@
       "id": "ASR-01 / QAS-07",
       "qa": "Consistency & Idempotency (50 reqs)",
       "sla": "1 thành công, 49 lỗi 409, p95 <= 500ms",
-      "measured": "1 OK, 49 Conflict, Replay OK, p95=119.03ms",
+      "measured": "1 OK, 49 Conflict, Replay OK, p95=98.02ms",
       "passed": true
     },
     {
       "id": "ASR-02 / ADR-007",
       "qa": "Availability & Outbox Recovery (Huế)",
       "sla": "CB OPEN, Fast-fail < 50ms, ĐN/QN 100%",
-      "measured": "CB=OPEN (6.02ms), Outbox=4/4",
+      "measured": "CB=OPEN (1.75ms), Outbox=4/4",
       "passed": true
     },
     {
       "id": "ASR-03 / NĐ 13",
       "qa": "Security ABAC, Consent & AES-256-GCM",
       "sla": "Chặn chéo 403, Mã hóa DB, Signed PDF",
-      "measured": "HTTP 403 (2.44ms), AES-GCM=true",
+      "measured": "HTTP 403 (6.02ms), AES-GCM=true",
       "passed": true
     },
     {
       "id": "QAS-05 / C-04",
       "qa": "Audit Append-Only Trigger & HMAC",
       "sla": "Chặn SQL sửa/xóa, Phát hiện DBA 100%",
-      "measured": "Trigger=Blocked, HMAC Catch=0.225ms",
+      "measured": "Trigger=Blocked, HMAC Catch=0.205ms",
       "passed": true
     },
     {
       "id": "ASR-04",
       "qa": "Interoperability HIS #4 (HL7 FHIR R4)",
       "sla": "Sửa Core = 0 dòng, chuẩn FHIR R4",
-      "measured": "Synced (HOIAN-FHIR-9444), Core=0 dòng",
+      "measured": "Synced (HOIAN-FHIR-0157), Core=0 dòng",
       "passed": true
     },
     {
       "id": "QAS-06 / QAS-08",
       "qa": "Performance (200 Reads) & Async Queue",
       "sla": "Tra cứu p95 < 300ms, SMS Retry=SENT",
-      "measured": "579 req/s, p95=297.98ms, Queue=SENT",
+      "measured": "1175 req/s, p95=150.39ms, Queue=SENT",
       "passed": true
     }
   ],
@@ -60,17 +60,17 @@
       "conflictCount": 49,
       "dbConfirmedCount": 1,
       "idempotentReplayPassed": true,
-      "minMs": 102.33,
-      "avgMs": 112.92,
-      "p50": 112.65,
-      "p95": 119.03,
-      "p99": 146.84,
-      "totalSuiteMs": 147.12
+      "minMs": 92.1,
+      "avgMs": 95.95,
+      "p50": 95.42,
+      "p95": 98.02,
+      "p99": 117.95,
+      "totalSuiteMs": 118.2
     },
     "t2": {
       "passed": true,
       "hueCbStateDuringOutage": "OPEN",
-      "fastFailLatencyMs": 6.02,
+      "fastFailLatencyMs": 1.75,
       "daNangOk": true,
       "quangNamOk": true,
       "outboxRecoveredCount": 4,
@@ -79,7 +79,7 @@
     "t3": {
       "passed": true,
       "forbiddenStatus": 403,
-      "abacCheckLatencyMs": 2.44,
+      "abacCheckLatencyMs": 6.02,
       "auditRecorded": true,
       "encryptedAtRestVerified": true,
       "consentFlowVerified": true,
@@ -91,22 +91,22 @@
       "sqlDeleteBlocked": true,
       "detectedTamper": true,
       "tamperedBlockId": 1,
-      "verificationTimeMs": 0.225
+      "verificationTimeMs": 0.205
     },
     "t5": {
       "passed": true,
       "success": true,
       "fhirCompliant": true,
-      "hisReferenceCode": "HOIAN-FHIR-9444"
+      "hisReferenceCode": "HOIAN-FHIR-0157"
     },
     "t6": {
       "passed": true,
       "readCount": 200,
-      "throughputRps": 579,
-      "readP50": 248.74,
-      "readP95": 297.98,
-      "readP99": 299.54,
-      "bookingLatencyDuringSmsOutageMs": 3.91,
+      "throughputRps": 1175,
+      "readP50": 117.9,
+      "readP95": 150.39,
+      "readP99": 151.12,
+      "bookingLatencyDuringSmsOutageMs": 3.77,
       "notificationFinalStatus": "SENT",
       "notificationRetriesBeforeSuccess": 2
     }

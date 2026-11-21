@@ -1,5 +1,5 @@
 @startuml Deployment_View_MediLink
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-Deployment.puml
+!include <C4/C4_Deployment>
 
 LAYOUT_WITH_LEGEND()
 

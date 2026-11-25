@@ -180,6 +180,190 @@ function wPageBreak() {
   return '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
 }
 
+function wImage(relId, docPrId, name, cxEmu = 5850000, cyEmu = 3426429) {
+  return `<w:p>
+    <w:pPr>
+      <w:jc w:val="center"/>
+      <w:spacing w:before="120" w:after="80"/>
+      <w:keepNext/>
+    </w:pPr>
+    <w:r>
+      <w:drawing>
+        <wp:inline distT="0" distB="0" distL="0" distR="0" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+          <wp:extent cx="${cxEmu}" cy="${cyEmu}"/>
+          <wp:effectExtent l="0" t="0" r="0" b="0"/>
+          <wp:docPr id="${docPrId}" name="${xmlEscape(name)}"/>
+          <wp:cNvGraphicFramePr>
+            <a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/>
+          </wp:cNvGraphicFramePr>
+          <a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+            <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+              <pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                <pic:nvPicPr>
+                  <pic:cNvPr id="${docPrId + 100}" name="${xmlEscape(name)}"/>
+                  <pic:cNvPicPr/>
+                </pic:nvPicPr>
+                <pic:blipFill>
+                  <a:blip r:embed="${relId}"/>
+                  <a:stretch><a:fillRect/></a:stretch>
+                </pic:blipFill>
+                <pic:spPr>
+                  <a:xfrm><a:off x="0" y="0"/><a:ext cx="${cxEmu}" cy="${cyEmu}"/></a:xfrm>
+                  <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+                  <a:ln w="9525"><a:solidFill><a:srgbClr val="CBD5E1"/></a:solidFill></a:ln>
+                </pic:spPr>
+              </pic:pic>
+            </a:graphicData>
+          </a:graphic>
+        </wp:inline>
+      </w:drawing>
+    </w:r>
+  </w:p>`;
+}
+
+const ARCHITECTURE_DIAGRAMS = [
+  {
+    file: '01_c4_context.png',
+    figTitle: 'Hình 1: C4 Level 1 – System Context View & 3 Vùng Tin cậy (Trust Boundaries)',
+    notes: [
+      'Chú thích kiến trúc – Hình 1 (System Context View):',
+      '• Trust Boundary 1 (Public Zone): 4 nhóm tác nhân (Bệnh nhân, Bác sĩ, Lễ tân, Ban Giám đốc) kết nối qua Internet/Wi-Fi bắt buộc sử dụng HTTPS/TLS 1.3 + JWT HS256 và đi qua Token Bucket Rate Limiter.',
+      '• Trusted MediLink Platform: Trung tâm điều phối đặt lịch chống trùng 3 lớp, lưu trữ EHR mã hóa AES-256-GCM, phân quyền RBAC/ABAC + Patient Consent (Nghị định 13/2023/NĐ-CP) và Audit HMAC.',
+      '• Trust Boundary 2 (Legacy HIS Zone): Cô lập 3 cụm HIS dị thể không thể sửa DB (Đà Nẵng REST/UUID, Huế SOAP 1.1/XML, Quảng Nam Custom RPC/int) qua lớp Anti-Corruption Layer chuẩn HL7 FHIR R4.',
+      '• Trust Boundary 3 (Third-Party Providers): Thanh toán cọc đối soát qua Webhook HMAC; gửi SMS/Zalo ZNS chạy bất đồng bộ qua Worker để không làm chậm phản hồi đặt lịch.'
+    ]
+  },
+  {
+    file: '02_c4_container.png',
+    figTitle: 'Hình 2: C4 Level 2 – Container View (Architecture v2 – Ánh xạ 1:1 với docker-compose.yml)',
+    notes: [
+      'Chú thích kiến trúc – Hình 2 (Container View Architecture v2):',
+      '• Trust Boundary A (app-net): Tách biệt medilink-core (Node.js 22 phục vụ API đồng bộ) và medilink-worker (tiến trình nền chạy OutboxSyncWorker có Jitter, NotificationQueueWorker và AuditIntegrityWorker).',
+      '• Trust Boundary B (data-net với internal: true): Cô lập tuyệt đối Redis 7 (Distributed Lock + Fencing Token), SQLite 3 WAL (ACID + UNIQUE + Trigger) và Lab Object Storage khỏi mạng Internet.',
+      '• Trust Boundary C (his-net): Giao tiếp đồng bộ (Timeout 1.5s) khi mạch CLOSED và tự động chuyển sang đồng bộ bù bất đồng bộ (Async Outbox Replay) khi HIS Huế gặp sự cố.'
+    ]
+  },
+  {
+    file: '03_c4_component_acl.png',
+    figTitle: 'Hình 3: C4 Level 3 – Component View bên trong medilink-core & Hexagonal ACL',
+    notes: [
+      'Chú thích kiến trúc – Hình 3 (Component View & Anti-Corruption Layer):',
+      '• Gateway & ABAC Guard: Token Bucket Rate Limiter chặn spam F5 (Risk R-01); ABAC trích facility_id trực tiếp từ chữ ký JWT và đối chiếu bảng patient_consents trước khi cho phép truy xuất EHR.',
+      '• Booking & Concurrency Engine: Tách rõ logic nghiệp vụ (bookingService.js, slotCache.js) với tầng điều phối tranh chấp (lockManager.js, idempotencyManager.js).',
+      '• Hexagonal Anti-Corruption Layer (src/core/acl/): Chuẩn hóa qua CanonicalModelMapper (HL7 FHIR R4 {Patient, Appointment}), bọc Per-Facility CircuitBreaker và đăng ký động qua HisIntegrationDispatcher → Cắm thêm HIS #4 (Hội An FHIR) sửa đúng 0 dòng mã nguồn Core (ASR-04).'
+    ]
+  },
+  {
+    file: '04_c4_code_acl.png',
+    figTitle: 'Hình 4: C4 Level 4 – Code View (UML Class & Interface Diagram – src/core/acl/ & src/core/booking/)',
+    notes: [
+      'Chú thích kiến trúc – Hình 4 (C4 Level 4 – Code View):',
+      '• Port Trừu tượng BaseHisAdapter (baseAdapter.js): Định nghĩa hợp đồng bắt buộc syncAppointment(canonicalBundle, timeoutMs = 1500) và checkHealth() cho mọi HIS Adapter.',
+      '• 4 Lớp Kế thừa Cụ thể: DaNangJsonAdapter (REST/JSON), HueXmlAdapter (SOAP 1.1/XML), QuangNamCustomAdapter (Custom RPC) và FhirGenericAdapter (HL7 FHIR R4 – HIS #4 Hội An) tách biệt hoàn toàn với lõi.',
+      '• CircuitBreaker & LockManager: Máy trạng thái CLOSED/OPEN/HALF_OPEN theo từng facilityId và khóa phân tán Redis SET NX PX 3000 kèm Lua Atomic Unlock.'
+    ]
+  },
+  {
+    file: '05_deployment_view.png',
+    figTitle: 'Hình 5: Deployment View – Hạ tầng Docker Compose & 3 Mạng Cách ly',
+    notes: [
+      'Chú thích kiến trúc – Hình 5 (Deployment View):',
+      '• Single Ingress Point: Chỉ duy nhất container medilink-core mở cổng 3000 ra ngoài; toàn bộ Worker, Redis và CSDL không lộ cổng ra máy chủ Host.',
+      '• Phân tách 3 mạng Docker: app-net (ứng dụng), data-net (internal: true – không có đường ra Internet) và his-net (mạng mô phỏng 3 cụm HIS di sản trên cổng 8001, 8002, 8003).',
+      '• Shared Persistent Volume (/data): Lưu chung medilink.db (SQLite chế độ WAL) và /data/lab-files/*.enc (file PDF xét nghiệm mã hóa nhị phân). Tổng bộ nhớ 6 containers < 250 MB RAM.'
+    ]
+  },
+  {
+    file: '06_sequence_booking_concurrency.png',
+    figTitle: 'Hình 6: Sequence Diagram 1 – Chống Double-Booking 3 Lớp (ASR-01) & Outbox Recovery (ASR-02)',
+    notes: [
+      'Chú thích kiến trúc – Hình 6 (Luồng Đặt lịch & Phục hồi Sự cố):',
+      '• Pha 1 – Chống tranh chấp 3 lớp (ADR-003): X-Idempotency-Key → Redis SET NX PX 3000 kèm Monotonic Fencing Token → SQLite UNIQUE(active_slot_key). 50 request song song: đúng 1 mã 201, 49 mã 409 (p95 = 77.42ms).',
+      '• Pha 2 – Nhả khóa sớm (Khắc phục Risk R-01): Dùng Lua Atomic Unlock nhả khóa Redis ngay sau khi SQLite COMMIT thành công — tuyệt đối không giữ khóa trong lúc chờ mạng HIS.',
+      '• Pha 3 & 4 – Cô lập lỗi & Phục hồi có điều tiết (ADR-007): Khi HIS Huế lỗi, mạch chuyển OPEN (Fast-fail 1.43ms), ghi vào outbox_events và trả 201 ngay. Khi HIS sống lại, Worker đồng bộ từng đợt Batch=5 kèm Random Jitter 20–60ms chống Thundering Herd.'
+    ]
+  },
+  {
+    file: '07_sequence_security_audit.png',
+    figTitle: 'Hình 7: Sequence Diagram 2 – Bảo mật ABAC, Consent, AES-256-GCM & Audit HMAC (ASR-03, NĐ 13)',
+    notes: [
+      'Chú thích kiến trúc – Hình 7 (Luồng Bảo mật & Kiểm định Audit):',
+      '• Kịch bản A (ASR-03): Lễ tân Đà Nẵng cố truy xuất hồ sơ REC-HUE-5544 → ABAC phát hiện sai facility_id, ghi Audit Log HMAC và chặn HTTP 403 trong 8.49ms với 0 byte dữ liệu nhạy cảm rò rỉ.',
+      '• Kịch bản B (Nghị định 13/2023/NĐ-CP): Bác sĩ Đà Nẵng chỉ đọc được hồ sơ Huế khi bảng patient_consents có is_active = 1; hệ thống giải mã AES-256-GCM trong RAM và cấp Pre-signed URL 120s cho file PDF xét nghiệm (ADR-006).',
+      '• Chống sửa nhật ký (QAS-05): SQLite Trigger cấm UPDATE/DELETE; chuỗi băm liên hoàn HMAC-SHA256 giúp AuditVerifier phát hiện hành vi sửa trực tiếp DB chỉ trong 0.119ms.'
+    ]
+  }
+];
+
+function buildArchitectureGallerySection(imageMediaEntries) {
+  const out = [];
+  out.push(
+    wParagraph('PHẦN 3B: HỆ THỐNG SƠ ĐỒ KIẾN TRÚC TRỰC QUAN (ĐỦ 4 CẤP ĐỘ C4, DEPLOYMENT & SEQUENCE – HÌNH 1 → HÌNH 7)', {
+      pStyle: 'Heading1',
+      bold: true,
+      color: '1F4E79',
+      sizeHalfPt: 30,
+      before: 100,
+      after: 180,
+      bottomBorder: '1F4E79',
+      keepNext: true,
+      align: 'left'
+    })
+  );
+  out.push(
+    wParagraph(
+      'Toàn bộ 7 sơ đồ kiến trúc dưới đây (bao gồm đầy đủ 4 cấp độ mô hình C4: Context, Container, Component, Code cùng Deployment View và 2 Sequence Diagrams) được kết xuất ở độ phân giải cao (Retina 2x), bám sát 100% mã nguồn PlantUML trong thư mục diagrams/, docker-compose.yml và cấu trúc src/:',
+      { before: 40, after: 120, sizeHalfPt: 22 }
+    )
+  );
+
+  ARCHITECTURE_DIAGRAMS.forEach((diag, idx) => {
+    const imgPath = path.join(__dirname, 'diagrams', 'rendered', diag.file);
+    if (!fs.existsSync(imgPath)) {
+      throw new Error(`Missing rendered diagram: ${imgPath}. Run scripts/render_diagrams.js first.`);
+    }
+    const relId = `rIdImg${idx + 1}`;
+    const mediaName = `image${idx + 1}.png`;
+    imageMediaEntries.push({
+      relId,
+      mediaName,
+      data: fs.readFileSync(imgPath)
+    });
+
+    out.push(
+      wParagraph(`${idx + 1}. ${diag.figTitle}`, {
+        pStyle: 'Heading2',
+        bold: true,
+        color: '1F4E79',
+        sizeHalfPt: 25,
+        before: 160,
+        after: 60,
+        keepNext: true,
+        align: 'left'
+      })
+    );
+    out.push(wImage(relId, 10 + idx, diag.figTitle));
+    out.push(
+      wParagraph(diag.figTitle, {
+        align: 'center',
+        italic: true,
+        bold: true,
+        color: '334155',
+        sizeHalfPt: 20,
+        before: 20,
+        after: 100
+      })
+    );
+    out.push(wCallout(diag.notes));
+
+    if (idx < ARCHITECTURE_DIAGRAMS.length - 1) {
+      out.push(wPageBreak());
+    }
+  });
+
+  return out.join('\n');
+}
+
 function wCallout(lines) {
   const innerParas = lines
     .map((line, idx) =>
@@ -577,6 +761,7 @@ function generateWordReport() {
   ];
 
   const bodyParts = [buildCoverPageXml()];
+  const imageMediaEntries = [];
 
   sections.forEach((sec, idx) => {
     let combinedMd = '';
@@ -593,13 +778,20 @@ function generateWordReport() {
     }
 
     bodyParts.push(renderMarkdownSection(combinedMd, sec.title));
+
+    // Insert the 6 high-DPI Architecture Diagrams + Callout Notes right after M2 (idx === 2)
+    if (idx === 2) {
+      bodyParts.push(wPageBreak());
+      bodyParts.push(buildArchitectureGallerySection(imageMediaEntries));
+    }
+
     if (idx < sections.length - 1) {
       bodyParts.push(wPageBreak());
     }
   });
 
   const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
   <w:body>
     ${bodyParts.join('\n')}
     <w:sectPr>
@@ -640,6 +832,7 @@ function generateWordReport() {
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="png" ContentType="image/png"/>
   <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
   <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
 </Types>`;
@@ -649,22 +842,36 @@ function generateWordReport() {
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
 </Relationships>`;
 
+  const imageRelsXml = imageMediaEntries
+    .map(
+      (img) =>
+        `  <Relationship Id="${img.relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${img.mediaName}"/>`
+    )
+    .join('\n');
+
   const docRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+${imageRelsXml}
 </Relationships>`;
 
-  const zipBuf = buildZipBuffer([
+  const zipEntries = [
     { name: '[Content_Types].xml', data: contentTypesXml },
     { name: '_rels/.rels', data: rootRelsXml },
     { name: 'word/document.xml', data: documentXml },
     { name: 'word/styles.xml', data: stylesXml },
-    { name: 'word/_rels/document.xml.rels', data: docRelsXml }
-  ]);
+    { name: 'word/_rels/document.xml.rels', data: docRelsXml },
+    ...imageMediaEntries.map((img) => ({
+      name: `word/media/${img.mediaName}`,
+      data: img.data
+    }))
+  ];
+
+  const zipBuf = buildZipBuffer(zipEntries);
 
   const outPath = path.join(rootDir, 'BaoCao_GroupProject_MediLink_SE403.docx');
   fs.writeFileSync(outPath, zipBuf);
-  console.log(`[Generated Word Report] ${outPath} (${(zipBuf.length / 1024).toFixed(1)} KB)`);
+  console.log(`[Generated Word Report] ${outPath} (${imageMediaEntries.length} high-DPI diagrams embedded, ${(zipBuf.length / 1024).toFixed(1)} KB)`);
 }
 
 if (require.main === module) {
